@@ -1,0 +1,12 @@
+# Dev overlay for running the plugin from source inside a harness checkout:
+# the Loader feeds `name` straight to ESM import, so on Windows it must be a
+# file:// URL (plain absolute paths work on macOS/Linux).
+
+- insert:
+    - id: xiezhi
+      name: 'file:///D:/Work/projects/deepseek_harness/harness/xiezhi/src/index.ts'
+      # config:
+      #   verifier: true
+      #   batchSize: 8
+      #   post: off
+      #   maxFindings: 30

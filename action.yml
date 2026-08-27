@@ -1,0 +1,58 @@
+name: 'xiezhi review'
+description: 'Multi-agent AI code review (bug hunter + security scanner + evidence verification) powered by DeepSeek Harness'
+branding:
+  icon: 'eye'
+  color: 'blue'
+
+inputs:
+  deepseek-api-key:
+    description: 'DeepSeek API key'
+    required: true
+  github-token:
+    description: 'GitHub token used to fetch the PR and post the review'
+    required: false
+    default: ${{ github.token }}
+  plugin-ref:
+    description: 'Where to install dsh-xiezhi from (git ref, tarball, or npm spec)'
+    required: false
+    default: 'github:YOUR_NAME/xiezhi'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+
+    - name: Install xiezhi into a dsh profile
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        npx @deepseek-ai/dsh plugin --profile xiezhi add "${{ inputs.plugin-ref }}"
+        # git installs run `prepare` (a build step) — pnpm needs explicit
+        # approval. If the add fails, follow the printed package-key hint and
+        # add to profiles/xiezhi/pnpm-workspace.yaml:
+        #   allowBuilds:
+        #     dsh-xiezhi: true
+        # then re-run the add.
+
+    - name: Review pull request
+      shell: bash
+      env:
+        DEEPSEEK_API_KEY: ${{ inputs.deepseek-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PR_REF: ${{ github.repository }}#${{ github.event.pull_request.number }}
+      run: |
+        # A patch replaces the row's whole config, so restate every key.
+        cat > "$RUNNER_TEMP/xiezhi-overlay.yml" <<'YAML'
+        - id: xiezhi
+          config:
+            verifier: true
+            batchSize: 8
+            post: comment
+            maxFindings: 30
+        YAML
+        npx @deepseek-ai/dsh --profile xiezhi \
+          --patch "$RUNNER_TEMP/xiezhi-overlay.yml" \
+          "Use the review_pull_request tool to review PR ${PR_REF}, then briefly confirm what was posted."

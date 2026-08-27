@@ -1,0 +1,12 @@
+# The dsh-xiezhi bundle layer, used when the package is installed into a
+# profile (`dsh plugin --profile <name> add <ref>`): rows reference the
+# package name so Node module resolution finds the installed code.
+
+- insert:
+    - id: xiezhi
+      name: dsh-xiezhi
+      # config:
+      #   verifier: true       # evidence gate before reporting
+      #   batchSize: 8         # candidates per verifier batch
+      #   post: off            # off | comment (comment needs GITHUB_TOKEN)
+      #   maxFindings: 30      # report cap after aggregation

@@ -1,0 +1,45 @@
+{
+  "name": "dsh-xiezhi",
+  "version": "0.1.0",
+  "description": "Multi-agent GitHub pull-request review team for DeepSeek Harness",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.mjs"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "tsdown"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "3.18.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-subagent": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek",
+    "code-review",
+    "multi-agent"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
