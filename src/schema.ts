@@ -78,9 +78,9 @@ export interface AggregatedFinding extends Finding {
 const LINE_MERGE_WINDOW = 3
 
 /**
- * Deterministic dedup: same file, same category, and lines within the merge
- * window collapse into one entry carrying the union of roles and the most
- * severe severity. Order is stable per {@link compareFindings}.
+ * Deterministic dedup: same file with lines within the merge window collapse
+ * into one entry carrying the union of roles, the most severe severity, and
+ * the most specific category. Order is stable per {@link compareFindings}.
  */
 export function aggregateFindings(candidates: readonly { role: string, finding: Finding }[]): readonly AggregatedFinding[] {
   const sorted = [...candidates].sort((a, b) => compareFindings(a.finding, b.finding))
@@ -88,7 +88,6 @@ export function aggregateFindings(candidates: readonly { role: string, finding: 
   for (const { role, finding } of sorted) {
     const target = merged.find(existing =>
       existing.file === finding.file
-      && existing.category === finding.category
       && Math.abs(existing.line - finding.line) <= LINE_MERGE_WINDOW)
     if (target === undefined) {
       merged.push({ ...finding, roles: [role] })
