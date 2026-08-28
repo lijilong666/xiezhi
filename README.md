@@ -13,17 +13,21 @@ PR 事件
 拉取 PR diff（预算截断，超大 PR 优雅降级）
   │
   ▼
-并行派出审查子 agent ── bug猎手 ─┐
-  │              └─ 安全扫描 ──┤ 各自输出结构化 findings（outputSchema 强制）
-  ▼                            │
-獬豸裁决（验证层）◄─────────────┘
+并行派出审查子 agent ── bug猎手(pro) ──┐
+  │              ├─ 安全扫描(pro) ────┤ 各自输出结构化 findings（outputSchema 强制）
+  │              └─ nitpicker(flash) ┤
+  ▼                                  │
+獬豸裁决（验证层, flash）◄────────────┘
   │   逐条复核：diff 中无实锤证据即驳回（无裁决 = 丢弃）
   ▼
 确定性去重聚合（同文件+同类别+行窗口合并，角色溯源）
   │
   ▼
-Markdown 判决书（严重度分级）→ 可选发布为 PR 评论
+Markdown 判决书（严重度分级 + 每角色 token 成本表）
+  → 可选发布为 PR 评论（发现自动锚定为行内评论）
 ```
+
+**成本感知路由**：深度推理角色（bug 猎手、安全扫描）固定 pro 档模型，高频机械角色（nitpicker、裁决员）固定 flash 便宜档；每次审查自动输出分角色/分模型的 token 账单（输入/输出/缓存命中），机械活用便宜模型的节省量可直接读出。
 
 整次审查自动写入 dsh 会话日志，可回放、可审计。
 
@@ -79,15 +83,16 @@ pnpm build                                           # 独立仓库内（含 pre
 ```
 src/
 ├── index.ts          # 插件入口：Config schema + review_pull_request 工具
-├── orchestrator.ts   # 流水线：采集 → 并行审查 → 裁决 → 聚合 → 判决书 → 发布
-├── roles.ts          # 角色注册表（扩展点：加角色=加一项）
+├── orchestrator.ts   # 流水线：采集 → 并行审查 → 裁决 → 聚合 → 判决书（含成本表）→ 发布
+├── roles.ts          # 角色注册表 + 模型路由（扩展点：加角色=加一项）
 ├── verify.ts         # 獬豸裁决（分批复核，无裁决即丢弃）
+├── usage.ts          # 从子 agent 会话日志提取 token 用量
 ├── schema.ts         # Finding 类型 + 结构化 schema + 去重聚合（对齐公开 benchmark 真值字段）
-└── github.ts         # PR 拉取 + diff 预算截断 + 评论发布
+└── github.ts         # PR 拉取 + diff 预算截断 + hunk 行解析 + 行内评论发布
 ```
 
 ## Roadmap
 
 - P1：✅ 多角色并行审查、验证裁决、聚合去重、GitHub 评论发布、配置化
-- P2：✅ dsh bundle 打包 + GitHub Action 模板｜待办：行内 review comments、角色×模型成本路由、评测（Martian Code Review Bench + AACR-Bench）
+- P2：✅ dsh bundle 打包 + GitHub Action 模板、成本感知路由 + token 账单、行内评论（代码就绪，待真机发帖验证）｜待办：评测（Martian Code Review Bench + AACR-Bench）
 - P3：GitHub App 模式、脱敏导出、推广

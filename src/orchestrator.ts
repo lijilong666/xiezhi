@@ -1,8 +1,8 @@
 /**
  * Review pipeline: PR ingestion -> parallel role subagents -> verification
- * gate -> deterministic aggregation -> markdown report -> optional GitHub
- * posting. Each stage is an independent function so later stages slot in
- * without rework.
+ * gate -> deterministic aggregation -> markdown report (with cost table) ->
+ * optional GitHub posting with inline line comments. Each stage is an
+ * independent function so later stages slot in without rework.
  * @module xiezhi/orchestrator
  */
 
@@ -10,10 +10,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
-import { fetchPullRequest, postReviewComment, renderPrContext, type PrRef } from './github.ts'
-import { ROLES } from './roles.ts'
+import { buildInlineComments, fetchPullRequest, postReviewComment, renderPrContext, type PrRef } from './github.ts'
+import { ROLES, VERIFIER_ROUTE } from './roles.ts'
 import { aggregateFindings, asFindingsOutput, compareFindings, FINDINGS_OUTPUT_SCHEMA, type AggregatedFinding, type Finding } from './schema.ts'
 import { verifyFindings, type Candidate } from './verify.ts'
+import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.ts'
 
 /** Config consumed from the cordis.yml row; defaults live in the schema. */
 export interface ReviewConfig {
@@ -26,7 +27,9 @@ export interface ReviewConfig {
 interface RoleOutcome {
   readonly roleId: string
   readonly roleTitle: string
+  readonly model: string
   readonly findings: readonly Finding[]
+  readonly usage: UsageSummary
   readonly error?: string
 }
 
@@ -58,15 +61,16 @@ async function runRole(
     outputSchema: FINDINGS_OUTPUT_SCHEMA,
     persona: role.persona,
     toolFilter: { allow: [] },
-    ...role.model !== undefined ? { agentOptions: { model: role.model } } : {},
+    ...role.route !== undefined ? { agentOptions: { provider: role.route.provider, model: role.route.model } } : {},
   })
   try {
     const result = await run.result
+    const usage = sumRunUsage(run)
     if (result.stopReason !== 'completed') {
-      return { roleId: role.id, roleTitle: role.title, findings: [], error: result.stopReason }
+      return { roleId: role.id, roleTitle: role.title, model: role.route?.model ?? 'inherited', findings: [], usage, error: result.stopReason }
     }
     const output = asFindingsOutput(result.structured)
-    return { roleId: role.id, roleTitle: role.title, findings: output?.findings ?? [] }
+    return { roleId: role.id, roleTitle: role.title, model: role.route?.model ?? 'inherited', findings: output?.findings ?? [], usage }
   } finally {
     await run.dispose()
   }
@@ -79,9 +83,30 @@ interface PipelineStats {
   readonly candidateCount: number
   readonly droppedCount: number
   readonly verifierUsed: boolean
+  readonly verifierUsage: UsageSummary
 }
 
-function renderReport(title: string, htmlUrl: string, findings: readonly AggregatedFinding[], stats: PipelineStats): string {
+function renderCostSection(roleOutcomes: readonly RoleOutcome[], stats: PipelineStats): string {
+  const header = '| role | model | calls | input | output | cache read | cache write |'
+  const rule = '|---|---|---|---|---|---|---|'
+  const row = (label: string, model: string, usage: UsageSummary) =>
+    `| ${label} | ${model} | ${usage.calls} | ${formatTokens(usage.inputTokens)} | ${formatTokens(usage.outputTokens)} | ${formatTokens(usage.cacheReadTokens)} | ${formatTokens(usage.cacheWriteTokens)} |`
+  const roleRows = roleOutcomes.map(outcome => row(outcome.roleTitle, outcome.model, outcome.usage))
+  const verifierRow = stats.verifierUsed
+    ? [row('verifier', VERIFIER_ROUTE.model, stats.verifierUsage)]
+    : []
+  const total = roleOutcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), stats.verifierUsage)
+  const totalRow = `| **total** | — | ${total.calls} | ${formatTokens(total.inputTokens)} | ${formatTokens(total.outputTokens)} | ${formatTokens(total.cacheReadTokens)} | ${formatTokens(total.cacheWriteTokens)} |`
+  return ['## Cost', '', header, rule, ...roleRows, ...verifierRow, totalRow].join('\n')
+}
+
+function renderReport(
+  title: string,
+  htmlUrl: string,
+  findings: readonly AggregatedFinding[],
+  stats: PipelineStats,
+  roleOutcomes: readonly RoleOutcome[],
+): string {
   const count = (severity: string) => findings.filter(finding => finding.severity === severity).length
   const lines: string[] = [
     `# xiezhi review: ${title}`,
@@ -105,6 +130,7 @@ function renderReport(title: string, htmlUrl: string, findings: readonly Aggrega
   } else {
     lines.push('', '## Findings', '', 'No findings survived the review.')
   }
+  lines.push('', renderCostSection(roleOutcomes, stats))
   return lines.join('\n')
 }
 
@@ -125,7 +151,14 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     try {
       return await runRole(ctx.subagents, parent, role, prContext, signal)
     } catch (error) {
-      return { roleId: role.id, roleTitle: role.title, findings: [], error: String(error) }
+      return {
+        roleId: role.id,
+        roleTitle: role.title,
+        model: role.route?.model ?? 'inherited',
+        findings: [],
+        usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        error: String(error),
+      }
     }
   }))
 
@@ -138,7 +171,11 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
 
   const verified = config.verifier && candidates.length > 0
     ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, config.batchSize)
-    : { kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })), droppedCount: 0 }
+    : {
+        kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })),
+        droppedCount: 0,
+        usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      }
 
   const aggregated = aggregateFindings(verified.kept)
     .slice(0, config.maxFindings)
@@ -153,12 +190,14 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     candidateCount: candidates.length,
     droppedCount: verified.droppedCount,
     verifierUsed: config.verifier,
+    verifierUsage: verified.usage,
   }
-  let report = renderReport(data.title, data.htmlUrl, aggregated, stats)
+  let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes)
 
   if (config.post === 'comment') {
-    const url = await postReviewComment(ref, report, signal)
-    report = `${report}\n\n---\nPosted as a review: ${url}`
+    const { inline } = buildInlineComments(aggregated, data.files)
+    const url = await postReviewComment(ref, report, inline, signal)
+    report = `${report}\n\n---\nPosted as a review: ${url} (${inline.length} inline comments)`
   }
   return report
 }

@@ -56,30 +56,94 @@ async function ghFetch(path: string, signal: AbortSignal): Promise<unknown> {
   return response.json()
 }
 
-/** Post the review report as one PR review comment; requires GITHUB_TOKEN. */
-export async function postReviewComment(ref: PrRef, body: string, signal: AbortSignal): Promise<string> {
+/** Post the review report as one PR review; anchored findings become inline
+ * line comments, everything else stays in the body. Requires GITHUB_TOKEN. */
+export interface InlineComment {
+  readonly path: string
+  readonly line: number
+  readonly body: string
+}
+
+export function postReviewComment(
+  ref: PrRef,
+  body: string,
+  inline: readonly InlineComment[],
+  signal: AbortSignal,
+): Promise<string> {
   const token = process.env.GITHUB_TOKEN
   if (token === undefined || token === '') {
     throw new Error('post: comment requires GITHUB_TOKEN in the environment (read+write on pull requests)')
   }
-  const response = await fetch(`https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'xiezhi',
-    },
-    body: JSON.stringify({ body, event: 'COMMENT' }),
-    signal,
-  })
-  if (!response.ok) {
-    throw new Error(`GitHub API ${response.status} posting review: ${await response.text()}`)
+  return (async () => {
+    const response = await fetch(`https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'xiezhi',
+      },
+      body: JSON.stringify({
+        body,
+        event: 'COMMENT',
+        comments: inline.map(comment => ({ path: comment.path, line: comment.line, side: 'RIGHT', body: comment.body })),
+      }),
+      signal,
+    })
+    if (!response.ok) {
+      throw new Error(`GitHub API ${response.status} posting review: ${await response.text()}`)
+    }
+    const result = await response.json() as { html_url?: string }
+    if (result.html_url === undefined) throw new Error('GitHub API posted the review but returned no html_url')
+    return result.html_url
+  })()
+}
+
+/** Right-side (new file) line ranges covered by a unified diff patch. */
+export function rightSideRanges(patch: string): ReadonlyArray<readonly [number, number]> {
+  const ranges: Array<readonly [number, number]> = []
+  for (const match of patch.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const start = Number(match[1])
+    const length = match[2] === undefined ? 1 : Number(match[2])
+    if (length > 0) ranges.push([start, start + length - 1])
   }
-  const result = await response.json() as { html_url?: string }
-  if (result.html_url === undefined) throw new Error('GitHub API posted the review but returned no html_url')
-  return result.html_url
+  return ranges
+}
+
+function withinRanges(ranges: ReadonlyArray<readonly [number, number]>, line: number): boolean {
+  return ranges.some(([start, end]) => line >= start && line <= end)
+}
+
+/**
+ * Split aggregated findings into GitHub-anchorable inline comments (file was
+ * fetched, cited line falls inside a diff hunk on the new side) and the rest.
+ */
+export function buildInlineComments(
+  findings: readonly { file: string, line: number, severity: string, category: string, title: string, description: string, suggestion?: string, roles: readonly string[] }[],
+  files: readonly PrFile[],
+): { inline: readonly InlineComment[], unanchored: readonly typeof findings[number][] } {
+  const rangesByFile = new Map<string, ReadonlyArray<readonly [number, number]>>()
+  for (const file of files) {
+    if (file.patch !== undefined) rangesByFile.set(file.filename, rightSideRanges(file.patch))
+  }
+  const inline: InlineComment[] = []
+  const unanchored: typeof findings[number][] = []
+  for (const finding of findings) {
+    const ranges = rangesByFile.get(finding.file)
+    if (ranges !== undefined && withinRanges(ranges, finding.line)) {
+      const lines = [
+        `**[${finding.severity}] ${finding.title}** · ${finding.category} · via ${finding.roles.join(', ')}`,
+        '',
+        finding.description,
+      ]
+      if (finding.suggestion !== undefined) lines.push('', `> ${finding.suggestion}`)
+      inline.push({ path: finding.file, line: finding.line, body: lines.join('\n') })
+    } else {
+      unanchored.push(finding)
+    }
+  }
+  return { inline, unanchored }
 }
 
 /** Fetch PR metadata plus changed files within the review budget. */

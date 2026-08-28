@@ -1,8 +1,15 @@
 /**
  * Reviewer role registry. Adding a role here is the only edit needed to
- * widen the team; each role becomes one parallel spawn subagent.
+ * widen the team; each role becomes one parallel spawn subagent. The
+ * optional route implements cost-aware routing: deep reasoning roles pin
+ * the pro model, high-volume mechanical roles pin the flash model.
  * @module xiezhi/roles
  */
+
+export interface ModelRoute {
+  readonly provider: string
+  readonly model: string
+}
 
 export interface ReviewerRole {
   readonly id: string
@@ -11,9 +18,12 @@ export interface ReviewerRole {
   readonly persona: string
   /** Focused scope handed to the role inside the task prompt. */
   readonly instruction: string
-  /** Optional model id; omit to inherit the parent agent's model. */
-  readonly model?: string
+  /** Explicit provider/model route; omit to inherit the parent agent's. */
+  readonly route?: ModelRoute
 }
+
+/** The verification gate's route: high volume, mechanical evidence checks. */
+export const VERIFIER_ROUTE: ModelRoute = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
 
 export const ROLES: readonly ReviewerRole[] = [
   {
@@ -22,9 +32,11 @@ export const ROLES: readonly ReviewerRole[] = [
     persona: 'You are a meticulous senior engineer who hunts logic defects in code changes.',
     instruction: [
       'Hunt correctness defects only: logic errors, off-by-one, inverted conditions, unhandled null/undefined,',
-      'wrong operator, missing return, broken edge cases, race-prone sequences, incorrect error handling.',
+      'wrong operator, missing return, broken edge cases, race-prone sequences, incorrect error handling,',
+      'and tests that fail to exercise the change they claim to cover.',
       'Do NOT report style, naming, documentation, or speculative "might fail in the future" issues.',
     ].join(' '),
+    route: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   },
   {
     id: 'security',
@@ -35,5 +47,18 @@ export const ROLES: readonly ReviewerRole[] = [
       'credentials in the diff, unsafe deserialization, weak cryptography, SSRF, unsanitized input reaching sinks.',
       'Do NOT report generic robustness or style issues.',
     ].join(' '),
+    route: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+  },
+  {
+    id: 'nitpicker',
+    title: 'Nitpicker',
+    persona: 'You are a fastidious maintainer who flags small quality issues in code changes.',
+    instruction: [
+      'Flag mechanical quality issues only: misleading names, dead code, magic numbers, duplicated logic,',
+      'stale comments or docs contradicting the change, missing type narrowing.',
+      'Report ONLY info/minor severity. Do NOT report bugs, security issues, or architecture opinions —',
+      'other roles own those.',
+    ].join(' '),
+    route: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
   },
 ]

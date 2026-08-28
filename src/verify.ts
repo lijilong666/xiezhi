@@ -10,7 +10,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import { VERIFIER_ROUTE } from './roles.ts'
 import type { Finding, Severity } from './schema.ts'
+import { addUsage, sumRunUsage, type UsageSummary } from './usage.ts'
 
 export interface Candidate {
   readonly index: number
@@ -26,6 +28,7 @@ export interface VerifiedFinding {
 export interface VerifyOutcome {
   readonly kept: readonly VerifiedFinding[]
   readonly droppedCount: number
+  readonly usage: UsageSummary
 }
 
 interface Verdict {
@@ -109,7 +112,7 @@ export async function verifyFindings(
   signal: AbortSignal,
   batchSize: number,
 ): Promise<VerifyOutcome> {
-  if (candidates.length === 0) return { kept: [], droppedCount: 0 }
+  if (candidates.length === 0) return { kept: [], droppedCount: 0, usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
   const capped = candidates.slice(0, MAX_VERIFY_CANDIDATES)
   const droppedByCap = candidates.length - capped.length
   const batches: Candidate[][] = []
@@ -126,17 +129,20 @@ export async function verifyFindings(
       outputSchema: VERDICT_OUTPUT_SCHEMA,
       persona: VERIFIER_PERSONA,
       toolFilter: { allow: [] },
+      agentOptions: { provider: VERIFIER_ROUTE.provider, model: VERIFIER_ROUTE.model },
     })
     try {
       const result = await run.result
-      if (result.stopReason !== 'completed') return { batch, verdicts: [] as readonly Verdict[] }
-      return { batch, verdicts: asVerdictsOutput(result.structured) }
+      const usage = sumRunUsage(run)
+      if (result.stopReason !== 'completed') return { verdicts: [] as readonly Verdict[], usage }
+      return { verdicts: asVerdictsOutput(result.structured), usage }
     } finally {
       await run.dispose()
     }
   }))
 
   const byIndex = new Map<number, Verdict>()
+  const usage = outcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } satisfies UsageSummary)
   for (const outcome of outcomes) {
     for (const verdict of outcome.verdicts) byIndex.set(verdict.index, verdict)
   }
@@ -153,5 +159,5 @@ export async function verifyFindings(
         : { ...candidate.finding, severity: verdict.severity },
     })
   }
-  return { kept, droppedCount: dropped }
+  return { kept, droppedCount: dropped, usage }
 }
