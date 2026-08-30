@@ -23,7 +23,7 @@ export interface ReviewerRole {
 }
 
 /** The verification gate's route: high volume, mechanical evidence checks. */
-export const VERIFIER_ROUTE: ModelRoute = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+export const VERIFIER_ROUTE: ModelRoute = { provider: 'zhipu', model: 'glm-5.3-flash' }
 
 export const ROLES: readonly ReviewerRole[] = [
   {
@@ -36,7 +36,7 @@ export const ROLES: readonly ReviewerRole[] = [
       'and tests that fail to exercise the change they claim to cover.',
       'Do NOT report style, naming, documentation, or speculative "might fail in the future" issues.',
     ].join(' '),
-    route: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+    route: { provider: 'zhipu', model: 'glm-5.3' },
   },
   {
     id: 'security',
@@ -47,7 +47,7 @@ export const ROLES: readonly ReviewerRole[] = [
       'credentials in the diff, unsafe deserialization, weak cryptography, SSRF, unsanitized input reaching sinks.',
       'Do NOT report generic robustness or style issues.',
     ].join(' '),
-    route: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+    route: { provider: 'zhipu', model: 'glm-5.3' },
   },
   {
     id: 'nitpicker',
@@ -59,6 +59,6 @@ export const ROLES: readonly ReviewerRole[] = [
       'Report ONLY info/minor severity. Do NOT report bugs, security issues, or architecture opinions —',
       'other roles own those.',
     ].join(' '),
-    route: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    route: { provider: 'zhipu', model: 'glm-5.3-flash' },
   },
 ]
