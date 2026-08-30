@@ -10,8 +10,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
-import { buildInlineComments, fetchPullRequest, postReviewComment, renderPrContext, type PrRef } from './github.ts'
-import { ROLES, VERIFIER_ROUTE } from './roles.ts'
+import { buildInlineComments, fetchPullRequest, ghFetch, postReviewComment, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
+import { fetchRepoContext, renderRepoContext } from './context.ts'
+import { ROLES, VERIFIER_ROUTE, type ModelRoute } from './roles.ts'
 import { aggregateFindings, asFindingsOutput, compareFindings, FINDINGS_OUTPUT_SCHEMA, type AggregatedFinding, type Finding } from './schema.ts'
 import { verifyFindings, type Candidate } from './verify.ts'
 import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.ts'
@@ -22,6 +23,8 @@ export interface ReviewConfig {
   readonly batchSize: number
   readonly post: 'off' | 'comment'
   readonly maxFindings: number
+  /** Repository-context mode: full changed-file contents at the PR head. */
+  readonly repoContext: 'off' | 'changed'
   /** Per-role provider/model overrides keyed by role id; `verifier` names the gate. */
   readonly routes: readonly { id: string, provider: string, model: string }[]
 }
@@ -154,7 +157,12 @@ function renderReport(
  */
 export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal, prRef: string, config: ReviewConfig): Promise<string> {
   const { ref, data } = await fetchPullRequest(prRef, signal)
-  const prContext = renderPrContext(ref, data)
+  let prContext = renderPrContext(ref, data)
+  if (config.repoContext === 'changed') {
+    const repoContext = await fetchRepoContext(ghFetch, ref, data.headSha, data.files, SKIP_PATTERN, signal)
+    const section = renderRepoContext(repoContext)
+    if (section !== '') prContext = `${prContext}\n\n${section}`
+  }
 
   const roleOutcomes = await Promise.all(ROLES.map(async role => {
     try {

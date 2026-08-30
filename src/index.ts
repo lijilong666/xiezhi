@@ -24,6 +24,7 @@ export const Config: Schema<Config> = Schema.object({
   batchSize: Schema.number().default(8).description('Candidate findings per verifier subagent batch'),
   post: Schema.union(['off', 'comment']).default('off').description('"off" returns the report only; "comment" also posts it as a PR review (needs GITHUB_TOKEN)'),
   maxFindings: Schema.number().default(30).description('Report cap after aggregation'),
+  repoContext: Schema.union(['off', 'changed']).default('changed').description('"changed" injects full changed-file contents at the PR head into reviewer context; "off" reviews the diff only'),
   routes: Schema.array(Schema.object({
     id: Schema.string().required().description('Role id (bug-hunter, security, nitpicker, verifier)'),
     provider: Schema.string().required(),

@@ -77,6 +77,7 @@ pnpm build                                           # 独立仓库内（含 pre
 | `batchSize` | `8` | 每个裁决子 agent 复核的候选数 |
 | `post` | `off` | `off` 仅返回报告；`comment` 同时发布为 PR 评论（需 `GITHUB_TOKEN`） |
 | `maxFindings` | `30` | 聚合后报告条数上限 |
+| `repoContext` | `changed` | `changed` 注入变更文件在 PR head 的完整内容（预算：10 文件/单文件 16KB/共 48KB）；`off` 仅审 diff |
 | `routes` | `[]` | 按角色覆盖厂商/模型（多厂商路由开关） |
 
 `routes` 示例（把 bug 猎手切回 DeepSeek，其余保持智谱）：
@@ -105,8 +106,9 @@ node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.tes
 ```
 src/
 ├── index.ts          # 插件入口：Config schema + review_pull_request 工具
-├── orchestrator.ts   # 流水线：采集 → 并行审查 → 裁决 → 聚合 → 判决书（含成本表）→ 发布
+├── orchestrator.ts   # 流水线：采集 → 仓库上下文 → 并行审查 → 裁决 → 聚合 → 判决书（含成本表）→ 发布
 ├── roles.ts          # 角色注册表 + 模型路由（扩展点：加角色=加一项）
+├── context.ts        # 仓库上下文：变更文件全量拉取（预算截断，additions 优先）
 ├── verify.ts         # 獬豸裁决（分批复核，无裁决即丢弃）
 ├── usage.ts          # 从子 agent 会话日志提取 token 用量
 ├── schema.ts         # Finding 类型 + 结构化 schema + 去重聚合（对齐公开 benchmark 真值字段）

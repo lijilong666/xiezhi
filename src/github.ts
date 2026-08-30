@@ -22,6 +22,7 @@ export interface PrData {
   readonly title: string
   readonly body: string
   readonly htmlUrl: string
+  readonly headSha: string
   readonly files: readonly PrFile[]
   readonly skippedFileCount: number
 }
@@ -30,7 +31,9 @@ const MAX_FILES = 60
 const MAX_PATCH_CHARS_PER_FILE = 8000
 const MAX_TOTAL_PATCH_CHARS = 60000
 const MAX_BODY_CHARS = 2000
-const SKIP_PATTERN = /(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|\.min\.(js|css)$|\/dist\/|\/vendor\/|\.snap$)/
+const SKIP_PATTERN = /(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|\.min\.(js|css)$|(?:^|\/)dist\/|(?:^|\/)vendor\/|\.snap$)/
+
+export { SKIP_PATTERN }
 
 export function parsePrRef(input: string): PrRef {
   const trimmed = input.trim()
@@ -41,7 +44,7 @@ export function parsePrRef(input: string): PrRef {
   throw new Error(`Cannot parse PR reference: ${input} (expected "owner/repo#123" or a github.com PR URL)`)
 }
 
-async function ghFetch(path: string, signal: AbortSignal): Promise<unknown> {
+export async function ghFetch(path: string, signal: AbortSignal): Promise<unknown> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
@@ -150,7 +153,7 @@ export function buildInlineComments(
 export async function fetchPullRequest(refInput: string, signal: AbortSignal): Promise<{ ref: PrRef, data: PrData }> {
   const ref = parsePrRef(refInput)
   const base = `/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`
-  const meta = await ghFetch(base, signal) as { title: string, body: string | null, html_url: string }
+  const meta = await ghFetch(base, signal) as { title: string, body: string | null, html_url: string, head: { sha: string } }
   if (meta.title === undefined) throw new Error(`PR not found: ${refInput}`)
 
   const files: PrFile[] = []
@@ -187,6 +190,7 @@ export async function fetchPullRequest(refInput: string, signal: AbortSignal): P
       title: meta.title,
       body: (meta.body ?? '').slice(0, MAX_BODY_CHARS),
       htmlUrl: meta.html_url,
+      headSha: meta.head.sha,
       files: accepted,
       skippedFileCount: Math.max(skipped, files.length - accepted.length),
     },
