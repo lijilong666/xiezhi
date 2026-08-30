@@ -77,7 +77,7 @@ pnpm build                                           # 独立仓库内（含 pre
 | `batchSize` | `8` | 每个裁决子 agent 复核的候选数 |
 | `post` | `off` | `off` 仅返回报告；`comment` 同时发布为 PR 评论（需 `GITHUB_TOKEN`） |
 | `maxFindings` | `30` | 聚合后报告条数上限 |
-| `repoContext` | `changed` | `changed` 注入变更文件在 PR head 的完整内容（预算：10 文件/单文件 16KB/共 48KB）；`off` 仅审 diff |
+| `repoContext` | `off` | `changed` 注入变更文件在 PR head 的完整内容（预算：10 文件/单文件 16KB/共 48KB）。**A/B 实测（express#7377, glm-5.3）：注入后候选 3→0、真实缺陷丢失（注意力稀释），故默认 `off`**；保留给需要文件级核验的场景 |
 | `routes` | `[]` | 按角色覆盖厂商/模型（多厂商路由开关） |
 
 `routes` 示例（把 bug 猎手切回 DeepSeek，其余保持智谱）：
