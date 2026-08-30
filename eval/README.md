@@ -21,6 +21,8 @@ node xiezhi/eval/judge.mjs --dry         # 只解析不判分
 node xiezhi/eval/judge.mjs               # 判分 + 指标表（需 DEEPSEEK_API_KEY）
 ```
 
+Driver 在 `results/manifest.json` 逐 PR 记录起始时间、时长、状态（ok/failed/no-report）、发现数与 golden 数（崩溃安全，逐条落盘），批跑结束打印 ok/failed 统计与成功运行的 P50/P95/max 时延——即 Phase 0 要求的延迟与失败率指标来源。
+
 ## 消融实验（Roadmap）
 
 同一 harness 换配置重跑即可：`verifier: false`（验证层消融）、单角色（多角色消融）、全 flash（模型档位消融）。
