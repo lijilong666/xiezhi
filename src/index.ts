@@ -24,6 +24,11 @@ export const Config: Schema<Config> = Schema.object({
   batchSize: Schema.number().default(8).description('Candidate findings per verifier subagent batch'),
   post: Schema.union(['off', 'comment']).default('off').description('"off" returns the report only; "comment" also posts it as a PR review (needs GITHUB_TOKEN)'),
   maxFindings: Schema.number().default(30).description('Report cap after aggregation'),
+  routes: Schema.array(Schema.object({
+    id: Schema.string().required().description('Role id (bug-hunter, security, nitpicker, verifier)'),
+    provider: Schema.string().required(),
+    model: Schema.string().required(),
+  })).default([]).description('Per-role provider/model overrides; omit an id to keep its built-in route'),
 })
 
 export function apply(ctx: Context, config: Config) {

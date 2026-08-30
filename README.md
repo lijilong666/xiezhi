@@ -77,6 +77,28 @@ pnpm build                                           # 独立仓库内（含 pre
 | `batchSize` | `8` | 每个裁决子 agent 复核的候选数 |
 | `post` | `off` | `off` 仅返回报告；`comment` 同时发布为 PR 评论（需 `GITHUB_TOKEN`） |
 | `maxFindings` | `30` | 聚合后报告条数上限 |
+| `routes` | `[]` | 按角色覆盖厂商/模型（多厂商路由开关） |
+
+`routes` 示例（把 bug 猎手切回 DeepSeek，其余保持智谱）：
+
+```yaml
+- id: xiezhi
+  config:
+    routes:
+      - id: bug-hunter
+        provider: deepseek-official
+        model: deepseek-v4-pro
+```
+
+内置路由：bug-hunter/security → `glm-5.3`，nitpicker/verifier → `glm-5.3-flash`（provider `zhipu`，需同时挂载 `dsh-llm-zhipu` 适配器）。
+
+## 测试
+
+```sh
+node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts zhipu-adapter/tests/sse.test.ts
+```
+
+纯函数覆盖：去重聚合（行窗口合并/严重度优先/角色并集）、hunk 行解析与锚点分流、SSE 分帧（多行 join/CRLF/注释跳过/截断检测/UTF-8 分片）。
 
 ## 结构
 

@@ -10,7 +10,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
-import { VERIFIER_ROUTE } from './roles.ts'
+import type { ModelRoute } from './roles.ts'
 import type { Finding, Severity } from './schema.ts'
 import { addUsage, sumRunUsage, type UsageSummary } from './usage.ts'
 
@@ -111,6 +111,7 @@ export async function verifyFindings(
   candidates: readonly Candidate[],
   signal: AbortSignal,
   batchSize: number,
+  route: ModelRoute,
 ): Promise<VerifyOutcome> {
   if (candidates.length === 0) return { kept: [], droppedCount: 0, usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
   const capped = candidates.slice(0, MAX_VERIFY_CANDIDATES)
@@ -129,7 +130,7 @@ export async function verifyFindings(
       outputSchema: VERDICT_OUTPUT_SCHEMA,
       persona: VERIFIER_PERSONA,
       toolFilter: { allow: [] },
-      agentOptions: { provider: VERIFIER_ROUTE.provider, model: VERIFIER_ROUTE.model },
+      agentOptions: { provider: route.provider, model: route.model },
     })
     try {
       const result = await run.result

@@ -22,6 +22,13 @@ export interface ReviewConfig {
   readonly batchSize: number
   readonly post: 'off' | 'comment'
   readonly maxFindings: number
+  /** Per-role provider/model overrides keyed by role id; `verifier` names the gate. */
+  readonly routes: readonly { id: string, provider: string, model: string }[]
+}
+
+/** Resolve one role's route: config override first, then the role default. */
+function resolveRoute(config: ReviewConfig, roleId: string, fallback: ModelRoute | undefined): ModelRoute | undefined {
+  return config.routes.find(route => route.id === roleId) ?? fallback
 }
 
 interface RoleOutcome {
@@ -50,6 +57,7 @@ async function runRole(
   subagents: SubagentRuntime,
   parent: Agent,
   role: (typeof ROLES)[number],
+  route: ModelRoute | undefined,
   prContext: string,
   signal: AbortSignal,
 ): Promise<RoleOutcome> {
@@ -61,16 +69,16 @@ async function runRole(
     outputSchema: FINDINGS_OUTPUT_SCHEMA,
     persona: role.persona,
     toolFilter: { allow: [] },
-    ...role.route !== undefined ? { agentOptions: { provider: role.route.provider, model: role.route.model } } : {},
+    ...route !== undefined ? { agentOptions: { provider: route.provider, model: route.model } } : {},
   })
   try {
     const result = await run.result
     const usage = sumRunUsage(run)
     if (result.stopReason !== 'completed') {
-      return { roleId: role.id, roleTitle: role.title, model: role.route?.model ?? 'inherited', findings: [], usage, error: result.stopReason }
+      return { roleId: role.id, roleTitle: role.title, model: route?.model ?? 'inherited', findings: [], usage, error: result.stopReason }
     }
     const output = asFindingsOutput(result.structured)
-    return { roleId: role.id, roleTitle: role.title, model: role.route?.model ?? 'inherited', findings: output?.findings ?? [], usage }
+    return { roleId: role.id, roleTitle: role.title, model: route?.model ?? 'inherited', findings: output?.findings ?? [], usage }
   } finally {
     await run.dispose()
   }
@@ -83,6 +91,7 @@ interface PipelineStats {
   readonly candidateCount: number
   readonly droppedCount: number
   readonly verifierUsed: boolean
+  readonly verifierModel: string
   readonly verifierUsage: UsageSummary
 }
 
@@ -93,7 +102,7 @@ function renderCostSection(roleOutcomes: readonly RoleOutcome[], stats: Pipeline
     `| ${label} | ${model} | ${usage.calls} | ${formatTokens(usage.inputTokens)} | ${formatTokens(usage.outputTokens)} | ${formatTokens(usage.cacheReadTokens)} | ${formatTokens(usage.cacheWriteTokens)} |`
   const roleRows = roleOutcomes.map(outcome => row(outcome.roleTitle, outcome.model, outcome.usage))
   const verifierRow = stats.verifierUsed
-    ? [row('verifier', VERIFIER_ROUTE.model, stats.verifierUsage)]
+    ? [row('verifier', stats.verifierModel, stats.verifierUsage)]
     : []
   const total = roleOutcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), stats.verifierUsage)
   const totalRow = `| **total** | — | ${total.calls} | ${formatTokens(total.inputTokens)} | ${formatTokens(total.outputTokens)} | ${formatTokens(total.cacheReadTokens)} | ${formatTokens(total.cacheWriteTokens)} |`
@@ -149,7 +158,7 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
 
   const roleOutcomes = await Promise.all(ROLES.map(async role => {
     try {
-      return await runRole(ctx.subagents, parent, role, prContext, signal)
+      return await runRole(ctx.subagents, parent, role, resolveRoute(config, role.id, role.route), prContext, signal)
     } catch (error) {
       return {
         roleId: role.id,
@@ -169,8 +178,9 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     }
   })
 
+  const verifierRoute = resolveRoute(config, 'verifier', VERIFIER_ROUTE) ?? VERIFIER_ROUTE
   const verified = config.verifier && candidates.length > 0
-    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, config.batchSize)
+    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, config.batchSize, verifierRoute)
     : {
         kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })),
         droppedCount: 0,
@@ -190,6 +200,7 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     candidateCount: candidates.length,
     droppedCount: verified.droppedCount,
     verifierUsed: config.verifier,
+    verifierModel: verifierRoute.model,
     verifierUsage: verified.usage,
   }
   let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes)
