@@ -12,25 +12,36 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
 const harnessRoot = join(here, '..', '..')
-const resultsDir = join(here, 'results')
-mkdirSync(resultsDir, { recursive: true })
-const manifestPath = join(resultsDir, 'manifest.json')
-
 const REPOS = ['sentry', 'grafana', 'cal_dot_com', 'discourse', 'keycloak']
 const args = process.argv.slice(2)
 const sampleFlag = readFlag('--sample')
 const limitFlag = readFlag('--limit')
+const resultsDirFlag = readValueFlag('--results-dir')
+const resultsDir = resultsDirFlag === undefined ? join(here, 'results') : resolve(resultsDirFlag)
+mkdirSync(resultsDir, { recursive: true })
+const manifestPath = join(resultsDir, 'manifest.json')
 
 function readFlag(name) {
   const idx = args.indexOf(name)
-  return idx === -1 ? undefined : Number(args[idx + 1])
+  if (idx === -1) return undefined
+  const value = Number(args[idx + 1])
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} requires a non-negative integer`)
+  return value
+}
+
+function readValueFlag(name) {
+  const idx = args.indexOf(name)
+  if (idx === -1) return undefined
+  const value = args[idx + 1]
+  if (value === undefined || value.startsWith('--')) throw new Error(`${name} requires a path`)
+  return value
 }
 
 function loadManifest() {
@@ -79,7 +90,7 @@ function extractReport(stdout) {
 
 const targets = loadTargets()
 const pending = targets.filter(target => !existsSync(resultPath(target)))
-console.log(`targets: ${targets.length}, pending: ${pending.length} (results/ provides resume)`)
+console.log(`targets: ${targets.length}, pending: ${pending.length} (${resultsDir} provides resume)`)
 const manifest = loadManifest()
 
 for (const target of pending) {

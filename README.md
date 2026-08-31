@@ -2,6 +2,10 @@
 
 **辨曲直，触不直者** —— 面向 DeepSeek Harness 的多智能体 GitHub PR 审查插件。
 
+<p align="center">
+  <img src="./docs/assets/xiezhi.png" alt="獬豸 Xiezhi 多智能体代码审查" width="720">
+</p>
+
 > 獬豸（xiè zhì）是中国神话中的独角神兽：能辨是非曲直，见人相争，便以角顶理亏的一方。古代法官戴獬豸冠以示明断。本插件以此命名——审查员提出"指控"，验证层辨真伪，最终用角"顶"到真正有问题的那行代码。
 
 ## 工作方式
@@ -20,7 +24,7 @@ PR 事件
 獬豸裁决（验证层, flash）◄────────────┘
   │   逐条复核：diff 中无实锤证据即驳回（无裁决 = 丢弃）
   ▼
-确定性去重聚合（同文件+同类别+行窗口合并，角色溯源）
+确定性去重聚合（同文件+行窗口合并，角色溯源）
   │
   ▼
 Markdown 判决书（严重度分级 + 每角色 token 成本表）
@@ -30,6 +34,16 @@ Markdown 判决书（严重度分级 + 每角色 token 成本表）
 **成本感知路由**：深度推理角色（bug 猎手、安全扫描）固定 pro 档模型，高频机械角色（nitpicker、裁决员）固定 flash 便宜档；每次审查自动输出分角色/分模型的 token 账单（输入/输出/缓存命中），机械活用便宜模型的节省量可直接读出。
 
 整次审查自动写入 dsh 会话日志，可回放、可审计。
+
+## 基准结果
+
+固定开发集取自 Martian Code Review Benchmark：5 个真实开源仓库各 4 个 PR，共 20 PR、68 条人工核实的 golden findings；另有 30 PR 冻结为 held-out，只在设计定稿后运行一次。
+
+| 配置 | 成功率 | Findings | Matched | Precision | Recall | P50 | P95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| DeepSeek V4 Flash（3 审查角色 + Verifier） | 20/20 | 104 | 27 | 26.0% | 39.7% | 8.6 min | 14.3 min |
+
+这是用于后续消融的开发基线，不是 held-out 最终成绩。固定样本见 [`eval/baseline-20.json`](./eval/baseline-20.json)，运行记录与判分摘要见 [`eval/baseline-20-manifest.json`](./eval/baseline-20-manifest.json) 和 [`eval/baseline-20-results.json`](./eval/baseline-20-results.json)。
 
 ## 运行（源码仓库内，开发模式）
 
@@ -96,7 +110,7 @@ pnpm build                                           # 独立仓库内（含 pre
 ## 测试
 
 ```sh
-node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts zhipu-adapter/tests/sse.test.ts
+node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts zhipu-adapter/tests/sse.test.ts
 ```
 
 纯函数覆盖：去重聚合（行窗口合并/严重度优先/角色并集）、hunk 行解析与锚点分流、SSE 分帧（多行 join/CRLF/注释跳过/截断检测/UTF-8 分片）。
@@ -118,5 +132,5 @@ src/
 ## Roadmap
 
 - P1：✅ 多角色并行审查、验证裁决、聚合去重、GitHub 评论发布、配置化
-- P2：✅ dsh bundle 打包 + GitHub Action 模板、成本感知路由 + token 账单、行内评论（代码就绪，待真机发帖验证）｜待办：评测（Martian Code Review Bench + AACR-Bench）
-- P3：GitHub App 模式、脱敏导出、推广
+- P2：✅ dsh bundle 打包 + GitHub Action 模板、成本感知路由 + token 账单、行内评论代码、Martian 20 PR 开发基线｜待办：行内评论真机验证
+- P3：验证层/上下文/模型档位消融、held-out 30 PR 最终验证、GitHub App 模式、脱敏导出

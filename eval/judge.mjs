@@ -8,16 +8,28 @@
  * Usage (needs DEEPSEEK_API_KEY in env or in ~/.dsh/.credentials.yaml):
  *   node xiezhi/eval/judge.mjs                 # judge everything in results/
  *   node xiezhi/eval/judge.mjs --dry           # parse + local metrics only
+ *   node xiezhi/eval/judge.mjs --results-dir <path> --output <path>
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const resultsDir = join(here, 'results')
 const REPOS = ['sentry', 'grafana', 'cal_dot_com', 'discourse', 'keycloak']
-const dry = process.argv.includes('--dry')
+const args = process.argv.slice(2)
+const dry = args.includes('--dry')
+const resultsDirFlag = readValueFlag('--results-dir')
+const outputFlag = readValueFlag('--output')
+const resultsDir = resultsDirFlag === undefined ? join(here, 'results') : resolve(resultsDirFlag)
+
+function readValueFlag(name) {
+  const idx = args.indexOf(name)
+  if (idx === -1) return undefined
+  const value = args[idx + 1]
+  if (value === undefined || value.startsWith('--')) throw new Error(`${name} requires a path`)
+  return value
+}
 
 function apiKey() {
   if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY
@@ -99,7 +111,7 @@ for (const repo of REPOS) {
     if (golden === undefined) continue
     const ours = parseFindings(row.report)
     const goldens = golden.comments ?? []
-    let matched = new Set()
+    const matchedGolden = new Set()
     if (!dry && ours.length > 0 && goldens.length > 0) {
       const usedOurs = new Set()
       for (let gi = 0; gi < goldens.length; gi++) {
@@ -113,30 +125,52 @@ for (const repo of REPOS) {
         const pick = majorityOurs.find(oi => !usedOurs.has(oi))
         if (pick !== undefined) {
           usedOurs.add(pick)
-          matched.add(gi)
+          matchedGolden.add(gi)
         }
       }
-      matched = [...matched]
     }
     perRepo.push({
       repo, idx: row.idx, title: golden.pr_title ?? '',
-      oursCount: ours.length, goldenCount: goldens.length, matchedCount: matched.length,
+      oursCount: ours.length, goldenCount: goldens.length, matchedCount: dry ? null : matchedGolden.size,
     })
-    console.log(`${repo}-${String(row.idx).padStart(2, '0')}: ours ${ours.length} / golden ${goldens.length} / matched ${matched.length}`)
+    console.log(`${repo}-${String(row.idx).padStart(2, '0')}: ours ${ours.length} / golden ${goldens.length} / matched ${dry ? 'n/a' : matchedGolden.size}`)
   }
 }
 
 const total = perRepo.reduce((sum, row) => ({
-  ours: sum.ours + row.oursCount, golden: sum.golden + row.goldenCount, matched: sum.matched + row.matchedCount,
+  ours: sum.ours + row.oursCount, golden: sum.golden + row.goldenCount, matched: sum.matched + (row.matchedCount ?? 0),
 }), { ours: 0, golden: 0, matched: 0 })
-const precision = total.ours > 0 ? (total.matched / total.ours * 100).toFixed(1) : 'n/a'
-const recall = total.golden > 0 ? (total.matched / total.golden * 100).toFixed(1) : 'n/a'
+const precision = !dry && total.ours > 0 ? `${(total.matched / total.ours * 100).toFixed(1)}%` : 'n/a'
+const recall = !dry && total.golden > 0 ? `${(total.matched / total.golden * 100).toFixed(1)}%` : 'n/a'
 console.log('\n| repo | PRs | ours | golden | matched | precision | recall |')
 console.log('|---|---|---|---|---|---|---|')
 for (const repo of REPOS) {
   const rows = perRepo.filter(row => row.repo === repo)
   if (rows.length === 0) continue
-  const agg = rows.reduce((s, r) => ({ o: s.o + r.oursCount, g: s.g + r.goldenCount, m: s.m + r.matchedCount }), { o: 0, g: 0, m: 0 })
-  console.log(`| ${repo} | ${rows.length} | ${agg.o} | ${agg.g} | ${agg.m} | ${agg.o ? (agg.m / agg.o * 100).toFixed(1) : 'n/a'}% | ${agg.g ? (agg.m / agg.g * 100).toFixed(1) : 'n/a'}% |`)
+  const agg = rows.reduce((s, r) => ({ o: s.o + r.oursCount, g: s.g + r.goldenCount, m: s.m + (r.matchedCount ?? 0) }), { o: 0, g: 0, m: 0 })
+  const repoPrecision = !dry && agg.o ? `${(agg.m / agg.o * 100).toFixed(1)}%` : 'n/a'
+  const repoRecall = !dry && agg.g ? `${(agg.m / agg.g * 100).toFixed(1)}%` : 'n/a'
+  console.log(`| ${repo} | ${rows.length} | ${agg.o} | ${agg.g} | ${dry ? 'n/a' : agg.m} | ${repoPrecision} | ${repoRecall} |`)
 }
-console.log(`| **total** | ${perRepo.length} | ${total.ours} | ${total.golden} | ${total.matched} | ${precision}% | ${recall}% |`)
+console.log(`| **total** | ${perRepo.length} | ${total.ours} | ${total.golden} | ${dry ? 'n/a' : total.matched} | ${precision} | ${recall} |`)
+
+if (outputFlag !== undefined) {
+  const outputPath = resolve(outputFlag)
+  writeFileSync(outputPath, `${JSON.stringify({
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    dryRun: dry,
+    resultsDir,
+    judge: dry ? null : { provider: 'deepseek', model: 'deepseek-chat', votesPerPair: 3, majorityThreshold: 2 },
+    perPr: perRepo,
+    totals: {
+      prs: perRepo.length,
+      ours: total.ours,
+      golden: total.golden,
+      matched: dry ? null : total.matched,
+      precision: !dry && total.ours > 0 ? total.matched / total.ours : null,
+      recall: !dry && total.golden > 0 ? total.matched / total.golden : null,
+    },
+  }, null, 2)}\n`)
+  console.log(`wrote ${outputPath}`)
+}

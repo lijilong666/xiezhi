@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "baseline-20-all-flash-2026-08-30",
+  "dataset": "withmartian/code-review-benchmark",
+  "targets": "baseline-20.json",
+  "generatedFromCommit": "782a1e5",
+  "configuration": {
+    "roles": [
+      "bug-hunter",
+      "security",
+      "nitpicker"
+    ],
+    "verifier": true,
+    "repoContext": "off",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash"
+  },
+  "run": {
+    "prs": 20,
+    "ok": 20,
+    "failed": 0,
+    "noReport": 0,
+    "totalDurationMs": 11731110,
+    "latencyP50Ms": 513409,
+    "latencyP95Ms": 859131,
+    "latencyMaxMs": 960002
+  },
+  "judge": {
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "votesPerPair": 3,
+    "majorityThreshold": 2,
+    "matching": "greedy one-to-one",
+    "note": "Totals were recomputed from the per-repository output after correcting the empty-match Set count bug; review reports were not rerun."
+  },
+  "perRepository": [
+    {
+      "repo": "sentry",
+      "prs": 4,
+      "ours": 26,
+      "golden": 14,
+      "matched": 7,
+      "precision": 0.2692307692,
+      "recall": 0.5
+    },
+    {
+      "repo": "grafana",
+      "prs": 4,
+      "ours": 11,
+      "golden": 12,
+      "matched": 4,
+      "precision": 0.3636363636,
+      "recall": 0.3333333333
+    },
+    {
+      "repo": "cal_dot_com",
+      "prs": 4,
+      "ours": 24,
+      "golden": 15,
+      "matched": 7,
+      "precision": 0.2916666667,
+      "recall": 0.4666666667
+    },
+    {
+      "repo": "discourse",
+      "prs": 4,
+      "ours": 29,
+      "golden": 17,
+      "matched": 5,
+      "precision": 0.1724137931,
+      "recall": 0.2941176471
+    },
+    {
+      "repo": "keycloak",
+      "prs": 4,
+      "ours": 14,
+      "golden": 10,
+      "matched": 4,
+      "precision": 0.2857142857,
+      "recall": 0.4
+    }
+  ],
+  "totals": {
+    "ours": 104,
+    "golden": 68,
+    "matched": 27,
+    "precision": 0.2596153846,
+    "recall": 0.3970588235
+  },
+  "heldOut": {
+    "prs": 30,
+    "policy": "Do not use for iteration; run once after the design is frozen."
+  }
+}

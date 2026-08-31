@@ -1,0 +1,149 @@
+{
+    "purpose":  "Fixed 20-PR baseline subset; all ablations and future comparisons run on exactly these PRs",
+    "selection":  "First 4 PRs per repo in Martian original order (driver --sample 4); no manual cherry-picking",
+    "created":  "2026-08-30",
+    "config":  "all roles + verifier on deepseek-official/deepseek-v4-flash via dev.patch.yml routes",
+    "remaining30":  "held-out; do not use for iteration, reserve for one final validation run",
+    "prs":  [
+                {
+                    "repo":  "sentry",
+                    "idx":  0,
+                    "url":  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+                    "title":  "Enhanced Pagination Performance for High-Volume Audit Logs",
+                    "goldenCount":  4
+                },
+                {
+                    "repo":  "sentry",
+                    "idx":  1,
+                    "url":  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+                    "title":  "Optimize spans buffer insertion with eviction during insert",
+                    "goldenCount":  4
+                },
+                {
+                    "repo":  "sentry",
+                    "idx":  2,
+                    "url":  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+                    "title":  "feat(upsampling) - Support upsampled error count with performance optimizations",
+                    "goldenCount":  3
+                },
+                {
+                    "repo":  "sentry",
+                    "idx":  3,
+                    "url":  "https://github.com/getsentry/sentry/pull/67876",
+                    "title":  "GitHub OAuth Security Enhancement",
+                    "goldenCount":  3
+                },
+                {
+                    "repo":  "grafana",
+                    "idx":  0,
+                    "url":  "https://github.com/grafana/grafana/pull/79265",
+                    "title":  "Anonymous: Add configurable device limit",
+                    "goldenCount":  5
+                },
+                {
+                    "repo":  "grafana",
+                    "idx":  1,
+                    "url":  "https://github.com/grafana/grafana/pull/103633",
+                    "title":  "AuthZService: improve authz caching",
+                    "goldenCount":  3
+                },
+                {
+                    "repo":  "grafana",
+                    "idx":  2,
+                    "url":  "https://github.com/grafana/grafana/pull/76186",
+                    "title":  "Plugins: Chore: Renamed instrumentation middleware to metrics middleware",
+                    "goldenCount":  3
+                },
+                {
+                    "repo":  "grafana",
+                    "idx":  3,
+                    "url":  "https://github.com/grafana/grafana/pull/107534",
+                    "title":  "Advanced Query Processing Architecture",
+                    "goldenCount":  1
+                },
+                {
+                    "repo":  "cal_dot_com",
+                    "idx":  0,
+                    "url":  "https://github.com/calcom/cal.com/pull/8087",
+                    "title":  "Async import of the appStore packages",
+                    "goldenCount":  2
+                },
+                {
+                    "repo":  "cal_dot_com",
+                    "idx":  1,
+                    "url":  "https://github.com/calcom/cal.com/pull/10600",
+                    "title":  "feat: 2fa backup codes",
+                    "goldenCount":  5
+                },
+                {
+                    "repo":  "cal_dot_com",
+                    "idx":  2,
+                    "url":  "https://github.com/calcom/cal.com/pull/10967",
+                    "title":  "fix: handle collective multiple host on destinationCalendar",
+                    "goldenCount":  6
+                },
+                {
+                    "repo":  "cal_dot_com",
+                    "idx":  3,
+                    "url":  "https://github.com/calcom/cal.com/pull/22345",
+                    "title":  "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+                    "goldenCount":  2
+                },
+                {
+                    "repo":  "discourse",
+                    "idx":  0,
+                    "url":  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+                    "title":  "FEATURE: automatically downsize large images",
+                    "goldenCount":  4
+                },
+                {
+                    "repo":  "discourse",
+                    "idx":  1,
+                    "url":  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+                    "title":  "FEATURE: per-topic unsubscribe option in emails",
+                    "goldenCount":  2
+                },
+                {
+                    "repo":  "discourse",
+                    "idx":  2,
+                    "url":  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+                    "title":  "Add comprehensive email validation for blocked users",
+                    "goldenCount":  3
+                },
+                {
+                    "repo":  "discourse",
+                    "idx":  3,
+                    "url":  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+                    "title":  "Enhance embed URL handling and validation system",
+                    "goldenCount":  8
+                },
+                {
+                    "repo":  "keycloak",
+                    "idx":  0,
+                    "url":  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+                    "title":  "Fixing Re-authentication with passkeys",
+                    "goldenCount":  2
+                },
+                {
+                    "repo":  "keycloak",
+                    "idx":  1,
+                    "url":  "https://github.com/keycloak/keycloak/pull/32918",
+                    "title":  "Add caching support for IdentityProviderStorageProvider.getForLogin operations",
+                    "goldenCount":  2
+                },
+                {
+                    "repo":  "keycloak",
+                    "idx":  2,
+                    "url":  "https://github.com/keycloak/keycloak/pull/33832",
+                    "title":  "Add AuthzClientCryptoProvider for authorization client cryptographic operations",
+                    "goldenCount":  4
+                },
+                {
+                    "repo":  "keycloak",
+                    "idx":  3,
+                    "url":  "https://github.com/keycloak/keycloak/pull/36882",
+                    "title":  "Add rolling-updates feature flag and compatibility framework",
+                    "goldenCount":  2
+                }
+            ]
+}

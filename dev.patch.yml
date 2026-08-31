@@ -5,8 +5,18 @@
 - insert:
     - id: xiezhi
       name: 'file:///D:/Work/projects/deepseek_harness/harness/xiezhi/src/index.ts'
-      # config:
-      #   verifier: true
-      #   batchSize: 8
-      #   post: off
-      #   maxFindings: 30
+      config:
+        # 20-PR baseline (2026-08-30): all-flash on DeepSeek; ablations reuse this overlay
+        routes:
+          - id: bug-hunter
+            provider: deepseek-official
+            model: deepseek-v4-flash
+          - id: security
+            provider: deepseek-official
+            model: deepseek-v4-flash
+          - id: nitpicker
+            provider: deepseek-official
+            model: deepseek-v4-flash
+          - id: verifier
+            provider: deepseek-official
+            model: deepseek-v4-flash

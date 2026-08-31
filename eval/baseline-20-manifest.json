@@ -1,0 +1,182 @@
+{
+  "cal_dot_com-00": {
+    "url": "https://github.com/calcom/cal.com/pull/8087",
+    "title": "Async import of the appStore packages",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T16:09:41.658Z",
+    "status": "ok",
+    "durationMs": 591149,
+    "findings": 5
+  },
+  "cal_dot_com-01": {
+    "url": "https://github.com/calcom/cal.com/pull/10600",
+    "title": "feat: 2fa backup codes",
+    "goldenCount": 5,
+    "startedAt": "2026-08-30T16:19:32.807Z",
+    "status": "ok",
+    "durationMs": 380628,
+    "findings": 8
+  },
+  "cal_dot_com-02": {
+    "url": "https://github.com/calcom/cal.com/pull/10967",
+    "title": "fix: handle collective multiple host on destinationCalendar",
+    "goldenCount": 6,
+    "startedAt": "2026-08-30T16:25:53.435Z",
+    "status": "ok",
+    "durationMs": 372382,
+    "findings": 9
+  },
+  "cal_dot_com-03": {
+    "url": "https://github.com/calcom/cal.com/pull/22345",
+    "title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T16:32:05.817Z",
+    "status": "ok",
+    "durationMs": 457394,
+    "findings": 2
+  },
+  "discourse-00": {
+    "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+    "title": "FEATURE: automatically downsize large images",
+    "goldenCount": 4,
+    "startedAt": "2026-08-30T16:39:43.211Z",
+    "status": "ok",
+    "durationMs": 331654,
+    "findings": 4
+  },
+  "discourse-01": {
+    "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+    "title": "FEATURE: per-topic unsubscribe option in emails",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T16:45:14.865Z",
+    "status": "ok",
+    "durationMs": 859131,
+    "findings": 6
+  },
+  "discourse-02": {
+    "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+    "title": "Add comprehensive email validation for blocked users",
+    "goldenCount": 3,
+    "startedAt": "2026-08-30T16:59:33.996Z",
+    "status": "ok",
+    "durationMs": 399467,
+    "findings": 4
+  },
+  "discourse-03": {
+    "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+    "title": "Enhance embed URL handling and validation system",
+    "goldenCount": 8,
+    "startedAt": "2026-08-30T17:06:13.464Z",
+    "status": "ok",
+    "durationMs": 488008,
+    "findings": 15
+  },
+  "grafana-00": {
+    "url": "https://github.com/grafana/grafana/pull/79265",
+    "title": "Anonymous: Add configurable device limit",
+    "goldenCount": 5,
+    "startedAt": "2026-08-30T15:30:40.581Z",
+    "status": "ok",
+    "durationMs": 513409,
+    "findings": 5
+  },
+  "grafana-01": {
+    "url": "https://github.com/grafana/grafana/pull/103633",
+    "title": "AuthZService: improve authz caching",
+    "goldenCount": 3,
+    "startedAt": "2026-08-30T15:39:13.990Z",
+    "status": "ok",
+    "durationMs": 558832,
+    "findings": 2
+  },
+  "grafana-02": {
+    "url": "https://github.com/grafana/grafana/pull/76186",
+    "title": "Plugins: Chore: Renamed instrumentation middleware to metrics middleware",
+    "goldenCount": 3,
+    "startedAt": "2026-08-30T15:48:32.822Z",
+    "status": "ok",
+    "durationMs": 485767,
+    "findings": 4
+  },
+  "grafana-03": {
+    "url": "https://github.com/grafana/grafana/pull/107534",
+    "title": "Advanced Query Processing Architecture",
+    "goldenCount": 1,
+    "startedAt": "2026-08-30T15:56:38.589Z",
+    "status": "ok",
+    "durationMs": 783069,
+    "findings": 0
+  },
+  "keycloak-00": {
+    "url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+    "title": "Fixing Re-authentication with passkeys",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T17:14:21.473Z",
+    "status": "ok",
+    "durationMs": 725435,
+    "findings": 2
+  },
+  "keycloak-01": {
+    "url": "https://github.com/keycloak/keycloak/pull/32918",
+    "title": "Add caching support for IdentityProviderStorageProvider.getForLogin operations",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T17:26:26.908Z",
+    "status": "ok",
+    "durationMs": 960002,
+    "findings": 7
+  },
+  "keycloak-02": {
+    "url": "https://github.com/keycloak/keycloak/pull/33832",
+    "title": "Add AuthzClientCryptoProvider for authorization client cryptographic operations",
+    "goldenCount": 4,
+    "startedAt": "2026-08-30T17:42:26.911Z",
+    "status": "ok",
+    "durationMs": 443036,
+    "findings": 4
+  },
+  "keycloak-03": {
+    "url": "https://github.com/keycloak/keycloak/pull/36882",
+    "title": "Add rolling-updates feature flag and compatibility framework",
+    "goldenCount": 2,
+    "startedAt": "2026-08-30T17:49:49.948Z",
+    "status": "ok",
+    "durationMs": 794789,
+    "findings": 1
+  },
+  "sentry-00": {
+    "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+    "title": "Enhanced Pagination Performance for High-Volume Audit Logs",
+    "goldenCount": 4,
+    "startedAt": "2026-08-30T14:47:33.623Z",
+    "status": "ok",
+    "durationMs": 597933,
+    "findings": 7
+  },
+  "sentry-01": {
+    "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+    "title": "Optimize spans buffer insertion with eviction during insert",
+    "goldenCount": 4,
+    "startedAt": "2026-08-30T14:57:31.556Z",
+    "status": "ok",
+    "durationMs": 849647,
+    "findings": 7
+  },
+  "sentry-02": {
+    "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+    "title": "feat(upsampling) - Support upsampled error count with performance optimizations",
+    "goldenCount": 3,
+    "startedAt": "2026-08-30T15:11:41.203Z",
+    "status": "ok",
+    "durationMs": 480994,
+    "findings": 9
+  },
+  "sentry-03": {
+    "url": "https://github.com/getsentry/sentry/pull/67876",
+    "title": "GitHub OAuth Security Enhancement",
+    "goldenCount": 3,
+    "startedAt": "2026-08-30T15:19:42.197Z",
+    "status": "ok",
+    "durationMs": 658384,
+    "findings": 3
+  }
+}
