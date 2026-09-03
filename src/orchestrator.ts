@@ -10,15 +10,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
-import { buildInlineComments, fetchPullRequest, ghFetch, postReviewComment, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
+import { renderEvidencePack } from './evidence.ts'
+import { buildInlineComments, fetchPullRequest, ghFetch, isChangedLine, postReviewComment, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
 import { fetchRepoContext, renderRepoContext } from './context.ts'
-import { ROLES, VERIFIER_ROUTE, type ModelRoute } from './roles.ts'
+import { planReview, renderPlanSection, type ReviewPlan } from './planner.ts'
+import { ROLES, VERIFIER_ROUTE, type ModelRoute, type ReviewerRole } from './roles.ts'
 import { aggregateFindings, asFindingsOutput, compareFindings, FINDINGS_OUTPUT_SCHEMA, type AggregatedFinding, type Finding } from './schema.ts'
-import { verifyFindings, type Candidate } from './verify.ts'
+import { EMPTY_VERIFICATION_COUNTS, verifyFindings, type Candidate, type VerificationCounts } from './verify.ts'
 import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.ts'
 
 /** Config consumed from the cordis.yml row; defaults live in the schema. */
 export interface ReviewConfig {
+  readonly adaptive: boolean
   readonly verifier: boolean
   readonly batchSize: number
   readonly post: 'off' | 'comment'
@@ -29,9 +32,10 @@ export interface ReviewConfig {
   readonly routes: readonly { id: string, provider: string, model: string }[]
 }
 
-/** Resolve one role's route: config override first, then the role default. */
-function resolveRoute(config: ReviewConfig, roleId: string, fallback: ModelRoute | undefined): ModelRoute | undefined {
-  return config.routes.find(route => route.id === roleId) ?? fallback
+/** Resolve one role's route: config override first, then the tier-aware role default. */
+function resolveRoute(config: ReviewConfig, role: ReviewerRole, tier: ReviewPlan['modelTier']): ModelRoute | undefined {
+  const tierDefault = tier === 'flash' && role.flashRoute !== undefined ? role.flashRoute : role.route
+  return config.routes.find(route => route.id === role.id) ?? tierDefault
 }
 
 interface RoleOutcome {
@@ -93,6 +97,7 @@ interface PipelineStats {
   readonly roleFailures: readonly { title: string, reason: string }[]
   readonly candidateCount: number
   readonly droppedCount: number
+  readonly verificationCounts: VerificationCounts
   readonly verifierUsed: boolean
   readonly verifierModel: string
   readonly verifierUsage: UsageSummary
@@ -118,6 +123,7 @@ function renderReport(
   findings: readonly AggregatedFinding[],
   stats: PipelineStats,
   roleOutcomes: readonly RoleOutcome[],
+  plan: ReviewPlan,
 ): string {
   const count = (severity: string) => findings.filter(finding => finding.severity === severity).length
   const lines: string[] = [
@@ -128,6 +134,10 @@ function renderReport(
       + `Candidates: ${stats.candidateCount}; verifier dropped ${stats.droppedCount}${stats.verifierUsed ? '' : ' (verifier off)'}. `
       + `Findings: ${count('critical')} critical, ${count('major')} major, ${count('minor')} minor, ${count('info')} info.`,
   ]
+  if (stats.verifierUsed) {
+    const counts = stats.verificationCounts
+    lines.push(`Verification: ${counts.confirmed} confirmed, ${counts.plausible} plausible, ${counts.inconclusive} inconclusive, ${counts.rejected} rejected.`)
+  }
   for (const failure of stats.roleFailures) {
     lines.push(`- role ${failure.title} ended early (${failure.reason}); its findings were dropped`)
   }
@@ -138,10 +148,13 @@ function renderReport(
       lines.push(`category: ${finding.category} · via ${finding.roles.join(', ')}`)
       lines.push(finding.description)
       if (finding.suggestion !== undefined) lines.push(`> ${finding.suggestion}`)
+      if (finding.evidencePack !== undefined) lines.push('', ...renderEvidencePack(finding.evidencePack))
     }
   } else {
     lines.push('', '## Findings', '', 'No findings survived the review.')
   }
+  const actualTokens = roleOutcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), stats.verifierUsage)
+  lines.push('', ...renderPlanSection(plan, actualTokens.inputTokens + actualTokens.outputTokens))
   lines.push('', renderCostSection(roleOutcomes, stats))
   return lines.join('\n')
 }
@@ -164,9 +177,12 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     if (section !== '') prContext = `${prContext}\n\n${section}`
   }
 
-  const roleOutcomes = await Promise.all(ROLES.map(async role => {
+  const plan = planReview(data, config.adaptive, config.batchSize)
+  const activeRoles = ROLES.filter(role => plan.selectedRoles.includes(role.id))
+
+  const roleOutcomes = await Promise.all(activeRoles.map(async role => {
     try {
-      return await runRole(ctx.subagents, parent, role, resolveRoute(config, role.id, role.route), prContext, signal)
+      return await runRole(ctx.subagents, parent, role, resolveRoute(config, role, plan.modelTier), prContext, signal)
     } catch (error) {
       return {
         roleId: role.id,
@@ -180,18 +196,19 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
   }))
 
   const candidates: Candidate[] = []
-  roleOutcomes.forEach((outcome, roleIdx) => {
+  roleOutcomes.forEach(outcome => {
     for (const finding of outcome.findings) {
-      candidates.push({ index: candidates.length, role: ROLES[roleIdx]?.id ?? outcome.roleId, finding })
+      candidates.push({ index: candidates.length, role: outcome.roleId, finding })
     }
   })
 
-  const verifierRoute = resolveRoute(config, 'verifier', VERIFIER_ROUTE) ?? VERIFIER_ROUTE
+  const verifierRoute = config.routes.find(route => route.id === 'verifier') ?? VERIFIER_ROUTE
   const verified = config.verifier && candidates.length > 0
-    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, config.batchSize, verifierRoute)
+    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, plan.batchSize, verifierRoute, (path, line) => isChangedLine(data.files, path, line))
     : {
         kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })),
         droppedCount: 0,
+        statusCounts: EMPTY_VERIFICATION_COUNTS,
         usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       }
 
@@ -207,11 +224,12 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
       .map(outcome => ({ title: outcome.roleTitle, reason: outcome.error })),
     candidateCount: candidates.length,
     droppedCount: verified.droppedCount,
+    verificationCounts: verified.statusCounts,
     verifierUsed: config.verifier,
     verifierModel: verifierRoute.model,
     verifierUsage: verified.usage,
   }
-  let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes)
+  let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes, plan)
 
   if (config.post === 'comment') {
     const { inline } = buildInlineComments(aggregated, data.files)

@@ -20,6 +20,8 @@ export interface ReviewerRole {
   readonly instruction: string
   /** Explicit provider/model route; omit to inherit the parent agent's. */
   readonly route?: ModelRoute
+  /** Cheaper same-family route the planner uses for the flash model tier. */
+  readonly flashRoute?: ModelRoute
 }
 
 /** The verification gate's route: high volume, mechanical evidence checks. */
@@ -37,6 +39,7 @@ export const ROLES: readonly ReviewerRole[] = [
       'Do NOT report style, naming, documentation, or speculative "might fail in the future" issues.',
     ].join(' '),
     route: { provider: 'zhipu', model: 'glm-5.3' },
+    flashRoute: { provider: 'zhipu', model: 'glm-5.3-flash' },
   },
   {
     id: 'security',
@@ -48,6 +51,7 @@ export const ROLES: readonly ReviewerRole[] = [
       'Do NOT report generic robustness or style issues.',
     ].join(' '),
     route: { provider: 'zhipu', model: 'glm-5.3' },
+    flashRoute: { provider: 'zhipu', model: 'glm-5.3-flash' },
   },
   {
     id: 'nitpicker',

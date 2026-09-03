@@ -6,6 +6,7 @@
  */
 
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import type { EvidencePack } from './evidence.ts'
 
 export type Severity = 'critical' | 'major' | 'minor' | 'info'
 
@@ -73,6 +74,7 @@ export function asFindingsOutput(value: unknown): FindingsOutput | undefined {
 /** A finding attributed to the roles that reported it. */
 export interface AggregatedFinding extends Finding {
   readonly roles: readonly string[]
+  readonly evidencePack?: EvidencePack
 }
 
 const LINE_MERGE_WINDOW = 3
@@ -93,9 +95,11 @@ export function aggregateFindings(candidates: readonly { role: string, finding: 
       merged.push({ ...finding, roles: [role] })
       continue
     }
-    if (!target.roles.includes(role)) target.roles = [...target.roles, role]
+    const roles = target.roles.includes(role) ? target.roles : [...target.roles, role]
     if (compareFindings(finding, target) < 0) {
-      Object.assign(target, finding, { roles: target.roles })
+      Object.assign(target, finding, { roles })
+    } else if (roles !== target.roles) {
+      Object.assign(target, { roles })
     }
   }
   return merged

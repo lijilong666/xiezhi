@@ -10,8 +10,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import { isPublishableVerdict, type ChecklistVerdict, type DiffAnchorValidator, type EvidenceBackedFinding, type VerificationStatus } from './evidence.ts'
 import type { ModelRoute } from './roles.ts'
-import type { Finding, Severity } from './schema.ts'
+import type { Finding } from './schema.ts'
 import { addUsage, sumRunUsage, type UsageSummary } from './usage.ts'
 
 export interface Candidate {
@@ -22,20 +23,29 @@ export interface Candidate {
 
 export interface VerifiedFinding {
   readonly role: string
-  readonly finding: Finding
+  readonly finding: EvidenceBackedFinding
+}
+
+export type VerificationCounts = Readonly<Record<VerificationStatus, number>>
+
+export const EMPTY_VERIFICATION_COUNTS: VerificationCounts = {
+  confirmed: 0,
+  plausible: 0,
+  inconclusive: 0,
+  rejected: 0,
+}
+
+interface AppliedVerdicts {
+  readonly kept: readonly VerifiedFinding[]
+  readonly droppedCount: number
+  readonly statusCounts: VerificationCounts
 }
 
 export interface VerifyOutcome {
   readonly kept: readonly VerifiedFinding[]
   readonly droppedCount: number
+  readonly statusCounts: VerificationCounts
   readonly usage: UsageSummary
-}
-
-interface Verdict {
-  readonly index: number
-  readonly keep: boolean
-  readonly severity?: Severity
-  readonly reason: string
 }
 
 const VERDICT_OUTPUT_SCHEMA: ObjectJsonSchema = {
@@ -49,11 +59,39 @@ const VERDICT_OUTPUT_SCHEMA: ObjectJsonSchema = {
         additionalProperties: false,
         properties: {
           index: { type: 'integer', description: 'Candidate index this verdict refers to' },
-          keep: { type: 'boolean', description: 'True only when the diff concretely proves the issue' },
+          status: { type: 'string', enum: ['confirmed', 'plausible', 'inconclusive', 'rejected'], description: 'Conclusion-first verification status' },
           severity: { type: 'string', enum: ['critical', 'major', 'minor', 'info'], description: 'Corrected severity, when the candidate over- or under-states it' },
-          reason: { type: 'string', description: 'One sentence: the evidence line, or why it is dropped' },
+          claim: { type: 'string', description: 'Concise defect claim supported by the evidence' },
+          trigger: { type: 'string', description: 'Concrete input, state, or execution path that triggers the issue' },
+          impact: { type: 'string', description: 'Observable incorrect behavior or security consequence' },
+          evidence: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['diff', 'intent', 'repository', 'static', 'test'] },
+                path: { type: 'string', description: 'Repository-relative file path when applicable' },
+                line: { type: 'integer', description: 'New-file line number when applicable' },
+                detail: { type: 'string', description: 'What this evidence proves' },
+              },
+              required: ['kind', 'detail'],
+            },
+          },
+          checklist: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              locationAnchored: { type: 'boolean', description: 'The cited location is a changed line that supports the claim' },
+              triggerExplained: { type: 'boolean', description: 'A concrete trigger is stated without speculation' },
+              impactExplained: { type: 'boolean', description: 'An observable impact is stated' },
+              evidenceSufficient: { type: 'boolean', description: 'The visible evidence proves the claim without hidden assumptions' },
+            },
+            required: ['locationAnchored', 'triggerExplained', 'impactExplained', 'evidenceSufficient'],
+          },
+          reason: { type: 'string', description: 'One sentence explaining the status decision' },
         },
-        required: ['index', 'keep', 'reason'],
+        required: ['index', 'status', 'claim', 'trigger', 'impact', 'evidence', 'checklist', 'reason'],
       },
     },
   },
@@ -80,9 +118,15 @@ function buildBatchPrompt(batch: readonly Candidate[], prContext: string): Conte
   }).join('\n')
   const text = [
     'Candidate review findings are listed below, each with an index. For EVERY index output one verdict.',
-    'KEEP a finding only when the diff itself concretely demonstrates the problem at or near the cited line:',
-    'you can point at the exact changed line(s) that make it real.',
-    'DROP it when any of these holds:',
+    'For every candidate, build an Evidence Pack and choose a conclusion-first status:',
+    '- confirmed: the visible diff directly proves the trigger and impact; every checklist item is true;',
+    '- plausible: the claim is credible but depends on code or behavior not visible here;',
+    '- inconclusive: the available evidence cannot decide the claim;',
+    '- rejected: the shown code contradicts the claim or it is merely stylistic.',
+    'Only confirmed findings are publishable. A confirmed verdict MUST cite at least one exact diff path and new-file line.',
+    'Set each checklist item independently. Never mark evidence sufficient based on the candidate wording alone.',
+    'Use intent or repository evidence only when it is actually present in the supplied context; never invent tool results.',
+    'Do not confirm a finding when any of these holds:',
     '- it is speculative ("might", "could", "consider verifying") rather than demonstrable;',
     '- the cited behavior depends on code not visible in the diff;',
     '- it misreads the shown code, or the line it cites does not support the claim;',
@@ -97,10 +141,54 @@ function buildBatchPrompt(batch: readonly Candidate[], prContext: string): Conte
   return [{ type: 'text', text }]
 }
 
-function asVerdictsOutput(value: unknown): readonly Verdict[] {
+function asVerdictsOutput(value: unknown): readonly ChecklistVerdict[] {
   if (typeof value !== 'object' || value === null) return []
   const verdicts = (value as { verdicts?: unknown }).verdicts
-  return Array.isArray(verdicts) ? verdicts as readonly Verdict[] : []
+  return Array.isArray(verdicts) ? verdicts as readonly ChecklistVerdict[] : []
+}
+
+/** Apply checklist verdicts with fail-closed handling for missing or malformed confirmations. */
+export function applyChecklistVerdicts(
+  candidates: readonly Candidate[],
+  verdicts: readonly ChecklistVerdict[],
+  isChangedLine: DiffAnchorValidator,
+  droppedByCap = 0,
+): AppliedVerdicts {
+  const byIndex = new Map(verdicts.map(verdict => [verdict.index, verdict]))
+  const kept: VerifiedFinding[] = []
+  let dropped = droppedByCap
+  const counts: Record<VerificationStatus, number> = { ...EMPTY_VERIFICATION_COUNTS, inconclusive: droppedByCap }
+  for (const candidate of candidates) {
+    const verdict = byIndex.get(candidate.index)
+    if (verdict === undefined) {
+      counts.inconclusive++
+      dropped++
+      continue
+    }
+    if (!isPublishableVerdict(verdict, candidate.finding, isChangedLine)) {
+      counts[verdict.status === 'confirmed' ? 'inconclusive' : verdict.status]++
+      dropped++
+      continue
+    }
+    counts.confirmed++
+    kept.push({
+      role: candidate.role,
+      finding: {
+        ...candidate.finding,
+        ...(verdict.severity === undefined ? {} : { severity: verdict.severity }),
+        evidencePack: {
+          status: verdict.status,
+          claim: verdict.claim,
+          trigger: verdict.trigger,
+          impact: verdict.impact,
+          evidence: verdict.evidence,
+          checklist: verdict.checklist,
+          reason: verdict.reason,
+        },
+      },
+    })
+  }
+  return { kept, droppedCount: dropped, statusCounts: counts }
 }
 
 /** Verify candidates in parallel batches; unresolved indices are dropped. */
@@ -112,8 +200,9 @@ export async function verifyFindings(
   signal: AbortSignal,
   batchSize: number,
   route: ModelRoute,
+  isChangedLine: DiffAnchorValidator,
 ): Promise<VerifyOutcome> {
-  if (candidates.length === 0) return { kept: [], droppedCount: 0, usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
+  if (candidates.length === 0) return { kept: [], droppedCount: 0, statusCounts: EMPTY_VERIFICATION_COUNTS, usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
   const capped = candidates.slice(0, MAX_VERIFY_CANDIDATES)
   const droppedByCap = candidates.length - capped.length
   const batches: Candidate[][] = []
@@ -135,30 +224,14 @@ export async function verifyFindings(
     try {
       const result = await run.result
       const usage = sumRunUsage(run)
-      if (result.stopReason !== 'completed') return { verdicts: [] as readonly Verdict[], usage }
+      if (result.stopReason !== 'completed') return { verdicts: [] as readonly ChecklistVerdict[], usage }
       return { verdicts: asVerdictsOutput(result.structured), usage }
     } finally {
       await run.dispose()
     }
   }))
 
-  const byIndex = new Map<number, Verdict>()
   const usage = outcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } satisfies UsageSummary)
-  for (const outcome of outcomes) {
-    for (const verdict of outcome.verdicts) byIndex.set(verdict.index, verdict)
-  }
-
-  const kept: VerifiedFinding[] = []
-  let dropped = droppedByCap
-  for (const candidate of capped) {
-    const verdict = byIndex.get(candidate.index)
-    if (verdict === undefined || !verdict.keep) { dropped++; continue }
-    kept.push({
-      role: candidate.role,
-      finding: verdict.severity === undefined
-        ? candidate.finding
-        : { ...candidate.finding, severity: verdict.severity },
-    })
-  }
-  return { kept, droppedCount: dropped, usage }
+  const applied = applyChecklistVerdicts(capped, outcomes.flatMap(outcome => outcome.verdicts), isChangedLine, droppedByCap)
+  return { ...applied, usage }
 }

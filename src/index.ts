@@ -20,7 +20,8 @@ export const inject = ['tools', 'subagents']
 export interface Config extends ReviewConfig {}
 
 export const Config: Schema<Config> = Schema.object({
-  verifier: Schema.boolean().default(true).description('Re-check every candidate finding against the diff before reporting'),
+  adaptive: Schema.boolean().default(false).description('Plan the team from deterministic PR risk features (risk level -> roles/tier/budget/verification depth); off keeps the fixed three-role pipeline. Experimental: not yet validated against the paid benchmark'),
+  verifier: Schema.boolean().default(true).description('Build an Evidence Pack and checklist-verify every candidate before reporting'),
   batchSize: Schema.number().default(8).description('Candidate findings per verifier subagent batch'),
   post: Schema.union(['off', 'comment']).default('off').description('"off" returns the report only; "comment" also posts it as a PR review (needs GITHUB_TOKEN)'),
   maxFindings: Schema.number().default(30).description('Report cap after aggregation'),
@@ -36,7 +37,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.tools.register(defineTool({
     name: 'review_pull_request',
     description: 'Review a GitHub pull request with a parallel multi-agent reviewer team '
-      + '(bug hunter + security scanner, then an evidence verification gate) and return a '
+      + '(bug hunter + security scanner, then a checklist-driven Evidence Pack gate) and return a '
       + 'severity-ranked markdown review report.',
     parameters: {
       pr: {

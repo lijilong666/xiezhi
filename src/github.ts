@@ -4,6 +4,8 @@
  * @module xiezhi/github
  */
 
+import { renderEvidencePack, type EvidencePack } from './evidence.ts'
+
 export interface PrRef {
   readonly owner: string
   readonly repo: string
@@ -118,12 +120,18 @@ function withinRanges(ranges: ReadonlyArray<readonly [number, number]>, line: nu
   return ranges.some(([start, end]) => line >= start && line <= end)
 }
 
+/** Whether a new-file location is present in one of the fetched diff hunks. */
+export function isChangedLine(files: readonly PrFile[], path: string, line: number): boolean {
+  const patch = files.find(file => file.filename === path)?.patch
+  return patch !== undefined && withinRanges(rightSideRanges(patch), line)
+}
+
 /**
  * Split aggregated findings into GitHub-anchorable inline comments (file was
  * fetched, cited line falls inside a diff hunk on the new side) and the rest.
  */
 export function buildInlineComments(
-  findings: readonly { file: string, line: number, severity: string, category: string, title: string, description: string, suggestion?: string, roles: readonly string[] }[],
+  findings: readonly { file: string, line: number, severity: string, category: string, title: string, description: string, suggestion?: string, roles: readonly string[], evidencePack?: EvidencePack }[],
   files: readonly PrFile[],
 ): { inline: readonly InlineComment[], unanchored: readonly typeof findings[number][] } {
   const rangesByFile = new Map<string, ReadonlyArray<readonly [number, number]>>()
@@ -141,6 +149,7 @@ export function buildInlineComments(
         finding.description,
       ]
       if (finding.suggestion !== undefined) lines.push('', `> ${finding.suggestion}`)
+      if (finding.evidencePack !== undefined) lines.push('', ...renderEvidencePack(finding.evidencePack))
       inline.push({ path: finding.file, line: finding.line, body: lines.join('\n') })
     } else {
       unanchored.push(finding)

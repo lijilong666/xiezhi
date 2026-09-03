@@ -22,7 +22,7 @@ PR 事件
   │              └─ nitpicker(flash) ┤
   ▼                                  │
 獬豸裁决（验证层, flash）◄────────────┘
-  │   逐条复核：diff 中无实锤证据即驳回（无裁决 = 丢弃）
+  │   四态裁决 + checklist + Evidence Pack（无实锤证据即驳回）
   ▼
 确定性去重聚合（同文件+行窗口合并，角色溯源）
   │
@@ -33,7 +33,15 @@ Markdown 判决书（严重度分级 + 每角色 token 成本表）
 
 **成本感知路由**：深度推理角色（bug 猎手、安全扫描）固定 pro 档模型，高频机械角色（nitpicker、裁决员）固定 flash 便宜档；每次审查自动输出分角色/分模型的 token 账单（输入/输出/缓存命中），机械活用便宜模型的节省量可直接读出。
 
+### 自适应审查规划（实验性，默认关闭）
+
+开启 `adaptive` 后，审查前先由纯函数 Risk Profiler 从 PR diff 与元数据提取确定性特征（变更规模、文件数、语言、测试比例、敏感目录、依赖清单、CI/迁移、patch 截断），规则路由器按加权信号分级：低风险 PR 只派 1 个 flash 主审查员，中风险派 2 个针对性角色（命中敏感/依赖/CI 信号时强制纳入安全员），高风险才启用全队 + pro 档 + 严格验证。每次审查的报告带 `## Review Plan` 审计段（风险信号、组队理由、预算与实际用量）；计划不合法或关闭开关时回退固定三角色流水线，Planner 永远不是单点故障。角色白名单静态，规划器不能发明工具或厂商。
+
 整次审查自动写入 dsh 会话日志，可回放、可审计。
+
+### Evidence Pack v1
+
+Verifier 对每条候选生成 `confirmed / plausible / inconclusive / rejected` 四态结论，并检查位置锚定、触发条件、可观察影响和证据充分性。只有 `confirmed`、四项清单全部通过且带有同文件附近 diff 引用的 finding 才能进入报告；最终评论附带 claim、trigger、impact、证据位置和裁决理由。
 
 ## 基准结果
 
@@ -43,7 +51,7 @@ Markdown 判决书（严重度分级 + 每角色 token 成本表）
 |---|---:|---:|---:|---:|---:|---:|---:|
 | DeepSeek V4 Flash（3 审查角色 + Verifier） | 20/20 | 104 | 27 | 26.0% | 39.7% | 8.6 min | 14.3 min |
 
-这是用于后续消融的开发基线，不是 held-out 最终成绩。固定样本见 [`eval/baseline-20.json`](./eval/baseline-20.json)，运行记录与判分摘要见 [`eval/baseline-20-manifest.json`](./eval/baseline-20-manifest.json) 和 [`eval/baseline-20-results.json`](./eval/baseline-20-results.json)。
+这是 Evidence Pack v1 引入前（提交 `0c8edeb`）的开发基线，不代表当前实现成绩，也不是 held-out 最终成绩。固定样本见 [`eval/baseline-20.json`](./eval/baseline-20.json)，运行记录与判分摘要见 [`eval/baseline-20-manifest.json`](./eval/baseline-20-manifest.json) 和 [`eval/baseline-20-results.json`](./eval/baseline-20-results.json)。
 
 ## 运行（源码仓库内，开发模式）
 
@@ -87,6 +95,7 @@ pnpm build                                           # 独立仓库内（含 pre
 
 | 键 | 默认 | 含义 |
 |---|---|---|
+| `adaptive` | `false` | 自适应审查规划：Risk Profiler 从 diff 提取确定性风险特征（规模/语言/测试比例/敏感目录/依赖/CI·迁移/截断），Hybrid Router 按风险分级动态组队（低 1 角色、中 2 针对性角色、高全队）并联动模型档位、验证深度与 token 预算；非法计划自动回退固定三角色。**实验性：未经付费基准验证，故默认关闭** |
 | `verifier` | `true` | 报告前对每条候选发现做证据复核 |
 | `batchSize` | `8` | 每个裁决子 agent 复核的候选数 |
 | `post` | `off` | `off` 仅返回报告；`comment` 同时发布为 PR 评论（需 `GITHUB_TOKEN`） |
@@ -110,10 +119,10 @@ pnpm build                                           # 独立仓库内（含 pre
 ## 测试
 
 ```sh
-node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts zhipu-adapter/tests/sse.test.ts
+node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts xiezhi/tests/evidence.test.ts zhipu-adapter/tests/sse.test.ts
 ```
 
-纯函数覆盖：去重聚合（行窗口合并/严重度优先/角色并集）、hunk 行解析与锚点分流、SSE 分帧（多行 join/CRLF/注释跳过/截断检测/UTF-8 分片）。
+纯函数覆盖：Evidence Pack 发布门槛与四态裁决、去重聚合（行窗口合并/严重度优先/角色并集）、hunk 行解析与锚点分流、SSE 分帧（多行 join/CRLF/注释跳过/截断检测/UTF-8 分片）。
 
 ## 结构
 
@@ -123,7 +132,8 @@ src/
 ├── orchestrator.ts   # 流水线：采集 → 仓库上下文 → 并行审查 → 裁决 → 聚合 → 判决书（含成本表）→ 发布
 ├── roles.ts          # 角色注册表 + 模型路由（扩展点：加角色=加一项）
 ├── context.ts        # 仓库上下文：变更文件全量拉取（预算截断，additions 优先）
-├── verify.ts         # 獬豸裁决（分批复核，无裁决即丢弃）
+├── verify.ts         # checklist-driven Verifier（四态分批裁决，无裁决即丢弃）
+├── evidence.ts       # Evidence Pack 类型、确定性发布门槛和 Markdown 渲染
 ├── usage.ts          # 从子 agent 会话日志提取 token 用量
 ├── schema.ts         # Finding 类型 + 结构化 schema + 去重聚合（对齐公开 benchmark 真值字段）
 └── github.ts         # PR 拉取 + diff 预算截断 + hunk 行解析 + 行内评论发布
