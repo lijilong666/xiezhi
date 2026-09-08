@@ -2,6 +2,8 @@
 
 **辨曲直，触不直者** —— 面向 DeepSeek Harness 的多智能体 GitHub PR 审查插件。
 
+> 架构总览与设计决策见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)。
+
 <p align="center">
   <img src="./docs/assets/xiezhi.png" alt="獬豸 Xiezhi 多智能体代码审查" width="720">
 </p>
@@ -157,28 +159,36 @@ pnpm build                                           # 独立仓库内（含 pre
 ## 测试
 
 ```sh
-node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts xiezhi/tests/evidence.test.ts zhipu-adapter/tests/sse.test.ts
+node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts xiezhi/tests/evidence.test.ts xiezhi/tests/evidence-tools.test.ts xiezhi/tests/planner.test.ts xiezhi/tests/escalation.test.ts xiezhi/tests/execver.test.ts xiezhi/tests/crosschange.test.ts xiezhi/tests/hybrid-planner.test.ts xiezhi/tests/adversarial.test.ts xiezhi/tests/resilience.test.ts zhipu-adapter/tests/sse.test.ts
 ```
 
-纯函数覆盖：Evidence Pack 发布门槛与四态裁决、去重聚合（行窗口合并/严重度优先/角色并集）、hunk 行解析与锚点分流、SSE 分帧（多行 join/CRLF/注释跳过/截断检测/UTF-8 分片）。
+99/99 纯函数与 fixture 覆盖：风险画像/分级/灰区/预算执行/仓库校准（表驱动含边界值）、Evidence Pack 发布门槛与四态裁决、快照检索原语（glob/路径逃逸/dispose 所有权）、跨文件断链解析、差分 tsc（真实编译器跑 fixture：升级命中/跨文件不升级/环境失败不改判）、planner 输出防弹映射、对抗注入中和、抑制表精确匹配、熔断跳闸/复位/自降防护、去重聚合、hunk 锚点、SSE 分帧。
 
 ## 结构
 
 ```
 src/
-├── index.ts          # 插件入口：Config schema + review_pull_request 工具
-├── orchestrator.ts   # 流水线：采集 → 仓库上下文 → 并行审查 → 裁决 → 聚合 → 判决书（含成本表）→ 发布
-├── roles.ts          # 角色注册表 + 模型路由（扩展点：加角色=加一项）
-├── context.ts        # 仓库上下文：变更文件全量拉取（预算截断，additions 优先）
-├── verify.ts         # checklist-driven Verifier（四态分批裁决，无裁决即丢弃）
-├── evidence.ts       # Evidence Pack 类型、确定性发布门槛和 Markdown 渲染
+├── index.ts          # 插件入口：Config schema + review_pull_request 工具（含 since 增量）+ 5 个只读检索工具
+├── orchestrator.ts   # 流水线：采集(→增量) → 快照 → cross-change → 规划(规则→灰区LLM) → 并行审查(熔断/超时) → 裁决(→execver) → 抑制 → 聚合 → 判决书 → 发布
+├── planner.ts        # Risk Profiler + Hybrid Router + ReviewPlan（预算/校准/灰区/validatePlan）
+├── hybrid-planner.ts # 灰区 LLM 规划员：enum 白名单 + 规则预算 + validatePlan 防弹
+├── roles.ts          # 角色注册表 + 路由（pro/flash 档 + verifier/planner 路由）
+├── verify.ts         # checklist 四态裁决（分批 + plausible 升级复核）
+├── evidence.ts       # Evidence Pack 类型、发布门槛（proofLevel/artifact）与渲染
+├── evidence-tools.ts # tarball 快照（symlink 跳过）+ EvidenceStore 检索原语 + 不可信规则包裹
+├── execver.ts        # 可执行验证：base/head 差分 tsc，executed 证明构造
+├── crosschange.ts    # 跨文件静态断链检测（removed/renamed 仍被 import）
+├── feedback.ts       # 透明反馈抑制表（glob+类别，报告标注）
+├── resilience.ts     # Provider 熔断（连续失败跳闸→跨厂商降级）+ 单次重试
+├── context.ts        # 仓库上下文：变更文件全量拉取（预算截断）
 ├── usage.ts          # 从子 agent 会话日志提取 token 用量
-├── schema.ts         # Finding 类型 + 结构化 schema + 去重聚合（对齐公开 benchmark 真值字段）
-└── github.ts         # PR 拉取 + diff 预算截断 + hunk 行解析 + 行内评论发布
+├── schema.ts         # Finding 类型 + 结构化 schema + 去重聚合
+└── github.ts         # PR 拉取 + 预算截断 + compare 增量 + hunk 解析 + 行内发布 + 不可信包裹
 ```
 
 ## Roadmap
 
 - P1：✅ 多角色并行审查、验证裁决、聚合去重、GitHub 评论发布、配置化
-- P2：✅ dsh bundle 打包 + GitHub Action 模板、成本感知路由 + token 账单、行内评论代码、Martian 20 PR 开发基线｜待办：行内评论真机验证
-- P3：验证层/上下文/模型档位消融、held-out 30 PR 最终验证、GitHub App 模式、脱敏导出
+- P2：✅ dsh bundle 打包 + GitHub Action 模板、成本感知路由 + token 账单、行内评论代码、Martian 20 PR 开发基线（P 26.0% / R 39.7%）
+- P3：✅ 自适应路由（规则 + 灰区混合规划 + 预算治理 + 仓库校准）、Repository Evidence Pack（快照检索 + 跨文件断链）、可执行验证（差分 tsc / executed 证明）、安全边界（不可信分区 + 透明抑制 + 对抗测试）、增量重审、熔断降级｜待办：行内评论真机验证
+- P4（待做）：**M5 终测窗口**——20 PR 终版全配置 vs 冻结基线对比 + held-out 30 PR 一次性验证（预估 ¥50-85）；之后 GitHub App 模式、脱敏导出、推广

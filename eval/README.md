@@ -36,9 +36,19 @@ Driver 在 `results/manifest.json` 逐 PR 记录起始时间、时长、状态�
 - 证据：[`baseline-20-manifest.json`](./baseline-20-manifest.json) 与 [`baseline-20-results.json`](./baseline-20-results.json)
 - 隔离：剩余 30 PR 为 held-out；迭代和消融不得使用
 
-## 消融实验（Roadmap）
+## 零成本审计（plan-only 重放）
 
-所有消融复用同一份 `baseline-20.json`，并使用不同的 `--results-dir`：`verifier: false`（验证层消融）、仓库上下文开关、全 flash 与分档路由。只有出现大幅度改进后才批跑 20 PR；日常改动使用单元测试和少量定向样本。
+```sh
+node --import tsx/esm xiezhi/eval/plan-only.mjs
+```
+
+不打模型 API：对 baseline-20 逐 PR 跑 Risk Profiler + Hybrid Router，输出分级分布、灰区占比（score 4-6，LLM 规划员适用范围）与分仓库中位数（可填 `repoCalibrations`）。首次实测：low 6 / medium 9 / high 5，灰区 6/20=30%。本地缓存 `.cache-plan-only.json` 断点续跑（GitHub 无 token 限流 60/h）；缓存为空时拒绝覆写分布文件。
+
+## 待做：M5 终测窗口（开发冻结后一次性执行）
+
+- 20 PR 终版全配置（adaptive + evidence + execver + 安全层）vs 2026-08-30 冻结基线 → 架构演进净效果
+- held-out 30 PR 一次性验证（`baseline-20.json` 已声明约定，跑完锁版）
+- 预估 ¥50-85（新配置单 PR ¥1-2：双快照 + tsc + 工具循环）；执行前需单独批准
 
 ## 已知口径差异
 
