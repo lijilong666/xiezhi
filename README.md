@@ -53,6 +53,20 @@ Markdown 判决书（严重度分级 + 每角色 token 成本表）
 - **Cross-Change 静态检测**（随 `evidence` 自动启用）：PR 删除或重命名文件后，快照中仍有 import 指向旧路径 → 产生 `cross-file-break` 风险信号（权重 2，可联动灰区/升级风险）并以不可信数据块提示验证员核查。纯静态正则解析（ES import/export/require），零模型调用。
 - 零成本标定：`node --import tsx/esm xiezhi/eval/plan-only.mjs` 输出 20 PR 分级分布、灰区占比与分仓库中位数（本地缓存，限流可断点续跑）。
 
+### 安全边界与反馈抑制（实验性）
+
+对抗面假设（GitInject/SEVRA-BENCH 结论）：PR 标题、描述、commit message、代码注释、仓库规则文件、工具输出都可能是攻击者控制的自然语言。
+
+- **不可信数据分区**：PR 标题/描述进入任何提示词前用 `<untrusted-data>` 包裹（注入的闭合标签被零宽字符中和），声明"是数据不是指令"；仓库规则文件与跨文件分析块同理（M1/M3 已落地）
+- **权限拆分（结构性）**：审查员零工具；验证员只有 5 个只读检索工具（路径防逃逸）；执行器固定 argv 不碰网络不碰凭据；`GITHUB_TOKEN` 只在主进程发布环节读取，**任何子 agent 都拿不到发布权与凭据**；LLM 规划员输出经 enum 白名单 + 规则预算 + validatePlan 三重约束
+- **透明抑制表**：`suppressions` 配置按 (file glob, category) 在发布边界过滤已驳回的发现类型；报告明确列出每条规则抑制数量——没有隐藏学习，人工可审计可撤销
+
+### 增量重审与生产韧性（实验性）
+
+- **增量重审**：`review_pull_request` 传 `since`（上次审查的 commit sha）→ 只审 `since...head` 的变更文件（GitHub compare API 的 diff-of-diff），成本随增量而非全量；无变更即返回空报告并提示旧评论可能过期；compare 失败自动回退全量并在报告注明
+- **熔断与降级**：provider 连续失败达阈值（默认 3）即跳闸，该 provider 的后续 spawn 直接降级到 `fallbackRoute`（跨厂商，默认 deepseek flash）；任一成功复位；单角色失败另有一次性降级重试；报告记录跳闸事件
+- **角色级超时**：`roleTimeoutMs` 墙钟预算（默认 15 分钟），超时取消该角色、其余角色与验证层照常；规划员调用独立 60s 超时，失败保留规则计划
+
 ### Evidence Pack v1
 
 Verifier 对每条候选生成 `confirmed / plausible / inconclusive / rejected` 四态结论，并检查位置锚定、触发条件、可观察影响和证据充分性。只有 `confirmed`、四项清单全部通过且带有同文件附近 diff 引用的 finding 才能进入报告；最终评论附带 claim、trigger、impact、证据位置和裁决理由。
@@ -120,6 +134,12 @@ pnpm build                                           # 独立仓库内（含 pre
 | `repoContext` | `off` | `changed` 注入变更文件在 PR head 的完整内容（预算：10 文件/单文件 16KB/共 48KB）。**A/B 实测（express#7377, glm-5.3）：注入后候选 3→0、真实缺陷丢失（注意力稀释），故默认 `off`**；保留给需要文件级核验的场景 |
 | `routes` | `[]` | 按角色覆盖厂商/模型（多厂商路由开关） |
 | `repoCalibrations` | `[]` | 按仓库中位数放宽 large/wide 阈值（`plan-only.mjs` 重放生成，见自适应规划小节） |
+| `suppressions` | `[]` | 透明反馈抑制表：`{filePattern, category?, reason}`，在发布边界按 glob+类别过滤被开发者驳回的发现类型；报告始终标注每条规则抑制了几条（可审计、可随时编辑删除，无隐藏学习） |
+| `circuitThreshold` | `3` | 同一 provider 连续失败 N 次后跳闸，后续 spawn 直接降级到 fallbackRoute |
+| `fallbackRoute` | `deepseek-official/deepseek-v4-flash` | 跨厂商兜底路由（跳闸降级 + 单次角色失败重试） |
+| `roleTimeoutMs` | `900000` | 单角色墙钟预算，超时取消该角色 |
+
+工具参数 `review_pull_request` 增加 `since`（上次审查的 head commit sha）：增量重审——只审 `since...head` 的 diff-of-diff（compare API），无新变更时直接返回"无可审查"并提示旧行内评论可能过期；compare 不可用时回退全量并注明。
 
 `routes` 示例（把 bug 猎手切回 DeepSeek，其余保持智谱）：
 

@@ -13,12 +13,14 @@ import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import { renderEvidencePack } from './evidence.ts'
 import { prepareEvidence, setActiveStore, type PreparedEvidence } from './evidence-tools.ts'
 import { findCrossFileBreaks, renderCrossBreaks } from './crosschange.ts'
+import { applySuppressions, renderSuppressionSection, type SuppressionRule } from './feedback.ts'
 import { executeVerification, type ExecVerOutcome } from './execver.ts'
 import { llmReviewPlan } from './hybrid-planner.ts'
-import { buildInlineComments, fetchPullRequest, ghFetch, isChangedLine, postReviewComment, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
+import { buildInlineComments, fetchCompareSince, fetchPullRequest, ghFetch, isChangedLine, postReviewComment, renderIncrementalContext, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
 import { fetchRepoContext, renderRepoContext } from './context.ts'
 import { budgetEnforcement, isGrayZone, planReview, renderPlanSection, riskProfileFor, type RepoCalibration, type ReviewPlan } from './planner.ts'
 import { PLANNER_ROUTE, ROLES, VERIFIER_ROUTE, type ModelRoute, type ReviewerRole } from './roles.ts'
+import { ProviderBreaker } from './resilience.ts'
 import { aggregateFindings, asFindingsOutput, compareFindings, FINDINGS_OUTPUT_SCHEMA, type AggregatedFinding, type Finding } from './schema.ts'
 import { EMPTY_VERIFICATION_COUNTS, verifyFindings, type Candidate, type VerificationCounts } from './verify.ts'
 import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.ts'
@@ -39,6 +41,14 @@ export interface ReviewConfig {
   readonly routes: readonly { id: string, provider: string, model: string }[]
   /** Per-repo scale baselines that widen the large/wide risk thresholds. */
   readonly repoCalibrations: readonly RepoCalibration[]
+  /** Transparent feedback suppressions applied at the publishing boundary. */
+  readonly suppressions: readonly SuppressionRule[]
+  /** Consecutive provider failures before routes degrade to the fallback. */
+  readonly circuitThreshold: number
+  /** Cross-provider fallback route for degraded/retried spawns. */
+  readonly fallbackRoute: ModelRoute
+  /** Per-role wall-clock budget; a role that exceeds it is cancelled. */
+  readonly roleTimeoutMs: number
 }
 
 /** Resolve one role's route: config override first, then the tier-aware role default. */
@@ -179,9 +189,21 @@ function renderReport(
  * @param config - validated plugin config.
  * @returns the aggregated markdown review report.
  */
-export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal, prRef: string, config: ReviewConfig): Promise<string> {
+export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal, prRef: string, config: ReviewConfig, since?: string): Promise<string> {
   const { ref, data } = await fetchPullRequest(prRef, signal)
   let prContext = renderPrContext(ref, data)
+  let incrementalNote = ''
+  if (since !== undefined && since !== data.headSha && since !== data.baseSha) {
+    const sinceFiles = await fetchCompareSince(ref, since, data.headSha, signal)
+    if (sinceFiles === undefined) {
+      incrementalNote = `incremental: cannot compare ${since.slice(0, 8)}...head — full review instead`
+    } else if (sinceFiles.length === 0) {
+      return `# xiezhi review: ${data.title}\n${data.htmlUrl}\n\nNo changes since ${since.slice(0, 8)}; nothing to review.\nPreviously posted inline comments may reference outdated code.`
+    } else {
+      prContext = renderIncrementalContext(ref, data, sinceFiles)
+      incrementalNote = `incremental: reviewing ${sinceFiles.length} file(s) changed since ${since.slice(0, 8)}; prior inline comments may reference outdated code`
+    }
+  }
   if (config.repoContext === 'changed') {
     const repoContext = await fetchRepoContext(ghFetch, ref, data.headSha, data.files, SKIP_PATTERN, signal)
     const section = renderRepoContext(repoContext)
@@ -199,28 +221,43 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
   let plannerUsageText = ''
   if (config.adaptive && config.hybridPlanner && isGrayZone(profile)) {
     const plannerRoute = config.routes.find(route => route.id === 'planner') ?? PLANNER_ROUTE
-    const planned = await llmReviewPlan(ctx.subagents, parent, signal, profile, plan, plannerRoute)
-    plan = planned.plan
-    plannerUsageText = planned.plannerUsageText
+    try {
+      const planned = await llmReviewPlan(ctx.subagents, parent, AbortSignal.any([signal, AbortSignal.timeout(60_000)]), profile, plan, plannerRoute)
+      plan = planned.plan
+      plannerUsageText = planned.plannerUsageText
+    } catch (error) {
+      plan = { ...plan, fallbackReason: `llm-planner-failed: ${String(error).slice(0, 120)}, rule plan kept` }
+    }
   }
   const activeRoles = ROLES.filter(role => plan.selectedRoles.includes(role.id))
 
   setActiveStore(evidence?.store)
   try {
 
-  const roleOutcomes = await Promise.all(activeRoles.map(async role => {
+  const breaker = new ProviderBreaker({ threshold: config.circuitThreshold, fallback: config.fallbackRoute })
+  const roleSignal = AbortSignal.any([signal, AbortSignal.timeout(config.roleTimeoutMs)])
+  const zeroUsage: UsageSummary = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+  const attemptRole = async (role: (typeof ROLES)[number], route: ModelRoute | undefined, tag: string): Promise<RoleOutcome> => {
     try {
-      return await runRole(ctx.subagents, parent, role, resolveRoute(config, role, plan.modelTier), prContext, signal)
+      const outcome = await runRole(ctx.subagents, parent, role, route, prContext, roleSignal)
+      breaker.record(route?.provider ?? 'inherited', outcome.error === undefined)
+      return outcome
     } catch (error) {
-      return {
-        roleId: role.id,
-        roleTitle: role.title,
-        model: role.route?.model ?? 'inherited',
-        findings: [],
-        usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        error: String(error),
-      }
+      breaker.record(route?.provider ?? 'inherited', false)
+      return { roleId: role.id, roleTitle: role.title, model: route?.model ?? 'inherited', findings: [], usage: zeroUsage, error: `${tag}: ${String(error).slice(0, 200)}` }
     }
+  }
+  const roleOutcomes = await Promise.all(activeRoles.map(async role => {
+    const primary = resolveRoute(config, role, plan.modelTier)
+    const initial = breaker.routeFor(primary)
+    const first = await attemptRole(role, initial.route, initial.degraded ? 'spawn (degraded)' : 'spawn')
+    if (first.error === undefined) return first
+    const retry = breaker.retryRoute(initial.route)
+    if (retry === undefined) return first
+    const second = await attemptRole(role, retry, 'fallback retry')
+    return second.error === undefined
+      ? { ...second, model: `${first.model} -> ${retry.model}` }
+      : { ...second, model: `${first.model} -> ${retry.model}`, error: `${first.error} | ${second.error}` }
   }))
 
   const candidates: Candidate[] = []
@@ -263,7 +300,8 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     droppedCount = Math.max(0, droppedCount - execverOutcome.upgrades.length)
   }
 
-  const aggregated = aggregateFindings(keptFindings)
+  const { kept: publishable, suppressed } = applySuppressions(aggregateFindings(keptFindings), config.suppressions)
+  const aggregated = publishable
     .slice(0, config.maxFindings)
     .sort(compareFindings)
 
@@ -283,6 +321,10 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     escalationEligible: enforcement.allowEscalation && plan.verificationDepth === 'light',
   }
   let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes, plan)
+  const suppressionLines = renderSuppressionSection(suppressed)
+  if (suppressionLines.length > 0) {
+    report = `${report}\n\n${suppressionLines.join('\n')}`
+  }
   if (config.evidence) {
     const evidenceLines = evidence?.store !== undefined
       ? evidence.store.renderReportSection()
@@ -299,6 +341,13 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
   }
   if (plannerUsageText !== '') {
     report = `${report}\n${plannerUsageText}`
+  }
+  const tripped = breaker.trippedProviders()
+  if (tripped.length > 0) {
+    report = `${report}\ncircuit breaker: provider(s) ${tripped.join(', ')} degraded to ${config.fallbackRoute.provider}/${config.fallbackRoute.model}`
+  }
+  if (incrementalNote !== '') {
+    report = `${report}\n${incrementalNote}`
   }
 
   if (config.post === 'comment') {

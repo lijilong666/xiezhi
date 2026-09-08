@@ -40,6 +40,17 @@ export const Config: Schema<Config> = Schema.object({
     medianChangedLines: Schema.number().description('Median changed lines from plan-only replay; raises the large-change threshold to max(400, 1.25x median)'),
     medianFiles: Schema.number().description('Median changed files; raises the wide-change threshold to max(10, 1.5x median)'),
   })).default([]).description('Per-repo scale baselines so ordinary PRs in large repos are not always high-risk'),
+  suppressions: Schema.array(Schema.object({
+    filePattern: Schema.string().required().description('File glob, e.g. "src/generated/**"'),
+    category: Schema.string().description('Optional finding category to narrow the rule'),
+    reason: Schema.string().required().description('Why this class of findings is suppressed (shown in the report)'),
+  })).default([]).description('Transparent feedback suppressions applied at the publishing boundary; the report always states what was suppressed'),
+  circuitThreshold: Schema.number().default(3).description('Consecutive provider failures before spawns degrade to the fallback route'),
+  fallbackRoute: Schema.object({
+    provider: Schema.string().required(),
+    model: Schema.string().required(),
+  }).default({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }).description('Cross-provider fallback for tripped providers and one-shot role retries'),
+  roleTimeoutMs: Schema.number().default(900_000).description('Per-role wall-clock budget in milliseconds'),
 })
 
 function activeStore() {
@@ -128,6 +139,10 @@ export function apply(ctx: Context, config: Config) {
         required: true,
         description: 'PR reference: "owner/repo#123" or a github.com pull-request URL',
       },
+      since: {
+        type: 'string',
+        description: 'Prior reviewed head commit sha: review only changes since it (incremental re-review); omit for a full review',
+      },
     },
     output: {
       schema: { type: 'string' },
@@ -138,7 +153,7 @@ export function apply(ctx: Context, config: Config) {
       if (parent === undefined) {
         throw new Error('review_pull_request requires a calling agent (exec.agent was undefined)')
       }
-      return await runReview(ctx, parent, exec.signal, args.pr, config)
+      return await runReview(ctx, parent, exec.signal, args.pr, config, typeof args.since === 'string' && args.since !== '' ? args.since : undefined)
     },
   }))
 }
