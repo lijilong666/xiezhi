@@ -17,6 +17,7 @@ export interface PrFile {
   readonly status: string
   readonly additions: number
   readonly deletions: number
+  readonly previous_filename?: string
   readonly patch?: string
 }
 
@@ -25,6 +26,7 @@ export interface PrData {
   readonly body: string
   readonly htmlUrl: string
   readonly headSha: string
+  readonly baseSha: string
   readonly files: readonly PrFile[]
   readonly skippedFileCount: number
 }
@@ -162,7 +164,7 @@ export function buildInlineComments(
 export async function fetchPullRequest(refInput: string, signal: AbortSignal): Promise<{ ref: PrRef, data: PrData }> {
   const ref = parsePrRef(refInput)
   const base = `/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`
-  const meta = await ghFetch(base, signal) as { title: string, body: string | null, html_url: string, head: { sha: string } }
+  const meta = await ghFetch(base, signal) as { title: string, body: string | null, html_url: string, head: { sha: string }, base: { sha: string } }
   if (meta.title === undefined) throw new Error(`PR not found: ${refInput}`)
 
   const files: PrFile[] = []
@@ -200,6 +202,7 @@ export async function fetchPullRequest(refInput: string, signal: AbortSignal): P
       body: (meta.body ?? '').slice(0, MAX_BODY_CHARS),
       htmlUrl: meta.html_url,
       headSha: meta.head.sha,
+      baseSha: meta.base.sha,
       files: accepted,
       skippedFileCount: Math.max(skipped, files.length - accepted.length),
     },

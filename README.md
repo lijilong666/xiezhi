@@ -35,9 +35,23 @@ Markdown 判决书（严重度分级 + 每角色 token 成本表）
 
 ### 自适应审查规划（实验性，默认关闭）
 
-开启 `adaptive` 后，审查前先由纯函数 Risk Profiler 从 PR diff 与元数据提取确定性特征（变更规模、文件数、语言、测试比例、敏感目录、依赖清单、CI/迁移、patch 截断），规则路由器按加权信号分级：低风险 PR 只派 1 个 flash 主审查员，中风险派 2 个针对性角色（命中敏感/依赖/CI 信号时强制纳入安全员），高风险才启用全队 + pro 档 + 严格验证。每次审查的报告带 `## Review Plan` 审计段（风险信号、组队理由、预算与实际用量）；计划不合法或关闭开关时回退固定三角色流水线，Planner 永远不是单点故障。角色白名单静态，规划器不能发明工具或厂商。
+开启 `adaptive` 后，审查前先由纯函数 Risk Profiler 从 PR diff 与元数据提取确定性特征（变更规模、文件数、语言、测试比例、敏感目录、依赖清单、CI/迁移、patch 截断），规则路由器按加权信号分级：低风险 PR 只派 1 个 flash 主审查员，中风险派 2 个针对性角色（命中敏感/依赖/CI 信号时强制纳入安全员），高风险才启用全队 + pro 档 + 严格验证。运行时预算治理：角色阶段 token 超出预算时，验证批次自动粗化（减调用）并跳过升级复核；light 验证路径上 critical/major 候选若仅得 plausible 结论，自动加一轮 4 条一批的严格复核再定生死，防止"低风险"配置误杀真缺陷。`repoCalibrations` 可按仓库历史中位数（由 `node --import tsx/esm xiezhi/eval/plan-only.mjs` 零成本重放得出）放宽 large/wide 阈值，避免大仓库的常规 PR 恒判高危。每次审查的报告带 `## Review Plan` 审计段（风险信号、组队理由、预算与实际用量、超支处置）；计划不合法或关闭开关时回退固定三角色流水线，Planner 永远不是单点故障。角色白名单静态，规划器不能发明工具或厂商。
 
 整次审查自动写入 dsh 会话日志，可回放、可审计。
+
+### Repository Evidence Pack（实验性，默认关闭）
+
+开启 `evidence` 后，验证员从"只看 diff"升级为"可检索仓库"：插件拉取 PR head 的 tarball 快照解包到临时目录（零第三方依赖，系统 tar；120MB/180s 预算，超限优雅降级为纯 diff 并在报告记录原因），注册 5 个只读检索工具——`xiezhi_read_file`（窗口读）、`xiezhi_search_code`（全词/正则/glob 搜索，排除 node_modules 等噪音树）、`xiezhi_find_references`（引用查找，源码先于测试排序）、`xiezhi_related_tests`（命名约定 + 回退搜索）、`xiezhi_git_history`（REST 查路径提交）。工具只授予验证员（审查员保持零工具——A/B 实证全量注入会注意力稀释）；每次调用进报告 Evidence 段，证据可回放。仓库规则文件（`AGENTS.md` / `.github/copilot-instructions.md`）以不可信数据标签包裹后才进入提示词，防止仓库内容伪装指令。
+
+### 可执行验证（实验性，默认关闭）
+
+开启 `execver`（需同时开 `evidence`）后，验证层获得确定性执行证据：插件解析自带的 `typescript`（peer 依赖），对 base 与 head 双快照各跑一次 `tsc --noEmit`，**取差分**——依赖缺失等环境噪音在两侧完全一致、自动抵消，只有 PR 新引入的编译错误才是有效信号。当 plausible 状态的 critical/major 候选所在文件恰好出现新编译错误时，确定性执行器直接构造 `proofLevel: executed` 的确认裁决（Evidence Pack 附编译器产物与 base/head 对比说明）；文件不匹配、环境失败或超时（180s）则原判保持不变——环境问题永远不确认也不否证一个缺陷（SWE-Cycle 的教训）。LLM 验证员全程拿不到 shell；plausible 升级优先走本执行器，不可用时才回退 LLM 复核。
+
+### 灰区混合规划与跨文件破坏检测（实验性，默认关闭）
+
+- **Hybrid Planner**（`hybridPlanner`）：规则路由对大多数 PR 足够，但评分落在 medium/high 边界 ±1（4-6 分）的"灰区"判断代价高。灰区 PR 追加一次 flash 结构化规划调用；其输出被当作**不可信数据**处理——角色只能从静态白名单 enum 中选、预算/批量由规则从 level/depth 推导（模型无权设定）、整体过 `validatePlan` 修复闸、置信度 <0.6 或调用失败/超时即保留规则计划，`fallbackReason` 全程落报告。规划员永不构成单点故障。
+- **Cross-Change 静态检测**（随 `evidence` 自动启用）：PR 删除或重命名文件后，快照中仍有 import 指向旧路径 → 产生 `cross-file-break` 风险信号（权重 2，可联动灰区/升级风险）并以不可信数据块提示验证员核查。纯静态正则解析（ES import/export/require），零模型调用。
+- 零成本标定：`node --import tsx/esm xiezhi/eval/plan-only.mjs` 输出 20 PR 分级分布、灰区占比与分仓库中位数（本地缓存，限流可断点续跑）。
 
 ### Evidence Pack v1
 
@@ -96,12 +110,16 @@ pnpm build                                           # 独立仓库内（含 pre
 | 键 | 默认 | 含义 |
 |---|---|---|
 | `adaptive` | `false` | 自适应审查规划：Risk Profiler 从 diff 提取确定性风险特征（规模/语言/测试比例/敏感目录/依赖/CI·迁移/截断），Hybrid Router 按风险分级动态组队（低 1 角色、中 2 针对性角色、高全队）并联动模型档位、验证深度与 token 预算；非法计划自动回退固定三角色。**实验性：未经付费基准验证，故默认关闭** |
+| `hybridPlanner` | `false` | 灰区混合规划：风险评分 4-6 分（medium/high 边界 ±1）的 PR 由 flash 模型规划员重新决定计划——输出经白名单校验（角色 enum 约束 + validatePlan 修复）、预算/批量仍由规则推导、置信度 <0.6 或任何失败回退规则计划并记录原因。需同时开 `adaptive`。**实验性** |
+| `evidence` | `false` | Repository Evidence Pack：拉取 PR head 只读快照（GitHub tarball，120MB 预算，超限/失败降级为纯 diff 并记录原因），给验证员 5 个检索工具（read_file/search_code/find_references/related_tests/git_history）做跨文件核验；快照同时驱动跨文件破坏检测（删除/重命名文件仍被 import → `cross-file-break` 风险信号 + 验证员提示）；仓库规则文件（AGENTS.md 等）以不可信数据包裹注入；报告附 Evidence 段（快照状态 + 验证员工具调用轨迹）。**实验性** |
+| `execver` | `false` | 可执行验证：用插件自带的 TypeScript 编译器对 base/head 双快照跑 `tsc --noEmit`，**差分对消环境噪音**（缺 node_modules 的报错两侧一致即抵消），仅 PR 新引入的编译错误才能把 plausible 的 critical/major 候选升级为 `executed` 实证确认（附编译器产物）；环境失败只降级不改判。需同时开 `evidence`。**实验性** |
 | `verifier` | `true` | 报告前对每条候选发现做证据复核 |
 | `batchSize` | `8` | 每个裁决子 agent 复核的候选数 |
 | `post` | `off` | `off` 仅返回报告；`comment` 同时发布为 PR 评论（需 `GITHUB_TOKEN`） |
 | `maxFindings` | `30` | 聚合后报告条数上限 |
 | `repoContext` | `off` | `changed` 注入变更文件在 PR head 的完整内容（预算：10 文件/单文件 16KB/共 48KB）。**A/B 实测（express#7377, glm-5.3）：注入后候选 3→0、真实缺陷丢失（注意力稀释），故默认 `off`**；保留给需要文件级核验的场景 |
 | `routes` | `[]` | 按角色覆盖厂商/模型（多厂商路由开关） |
+| `repoCalibrations` | `[]` | 按仓库中位数放宽 large/wide 阈值（`plan-only.mjs` 重放生成，见自适应规划小节） |
 
 `routes` 示例（把 bug 猎手切回 DeepSeek，其余保持智谱）：
 

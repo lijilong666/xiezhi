@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectPatchTruncation, fixedPlan, HARD_LIMITS, planReview, profileRisk, validatePlan, PLAN_VERSION, type ReviewPlan } from '../src/planner.ts'
+import { budgetEnforcement, detectPatchTruncation, effectiveThresholds, fixedPlan, HARD_LIMITS, planReview, profileRisk, repoSlug, validatePlan, PLAN_VERSION, type ReviewPlan } from '../src/planner.ts'
 import type { PrData, PrFile } from '../src/github.ts'
 
 function file(filename: string, additions = 10, deletions = 0, patch = '@@ -1,2 +1,3 @@\n context\n+x'): PrFile {
@@ -144,4 +144,46 @@ test('fixedPlan records its reason and never exceeds hard limits', () => {
   assert.equal(plan.fallbackReason, 'adaptive-off')
   assert.ok(plan.selectedRoles.length <= HARD_LIMITS.maxRoles)
   assert.ok(plan.tokenBudget <= HARD_LIMITS.maxTokenBudget)
+})
+
+test('budgetEnforcement: within budget keeps plan knobs and allows escalation', () => {
+  const plan = fixedPlan(8)
+  const enforcement = budgetEnforcement(plan, plan.tokenBudget)
+  assert.equal(enforcement.exceeded, false)
+  assert.equal(enforcement.verifierBatchSize, 8)
+  assert.equal(enforcement.allowEscalation, true)
+})
+
+test('budgetEnforcement: overspend coarsens batches (capped) and blocks escalation', () => {
+  const plan = fixedPlan(8)
+  const enforcement = budgetEnforcement(plan, plan.tokenBudget + 1)
+  assert.equal(enforcement.exceeded, true)
+  assert.equal(enforcement.verifierBatchSize, 16)
+  assert.equal(enforcement.allowEscalation, false)
+  const strict = { ...plan, batchSize: HARD_LIMITS.maxBatchSize }
+  assert.equal(budgetEnforcement(strict, strict.tokenBudget + 1).verifierBatchSize, HARD_LIMITS.maxBatchSize)
+})
+
+test('repo calibration: a large-repo median stops flagging ordinary PRs as large-change', () => {
+  const data = prData([file('services/auth/TokenStore.java', 500, 100)])
+  assert.ok(profileRisk(data).riskSignals.includes('large-change'))
+  const calibrated = profileRisk(data, { repo: 'keycloak/keycloak', medianChangedLines: 900, medianFiles: 14 })
+  assert.ok(!calibrated.riskSignals.includes('large-change'))
+  assert.ok(calibrated.riskSignals.includes('sensitive-paths'))
+})
+
+test('repo calibration keeps global floors for small repos', () => {
+  const thresholds = effectiveThresholds({ repo: 'a/b', medianChangedLines: 100, medianFiles: 4 })
+  assert.equal(thresholds.largeChange, 400)
+  assert.equal(thresholds.wideChange, 10)
+})
+
+test('planReview matches calibration by owner/repo slug', () => {
+  const data = prData([file('services/auth/TokenStore.java', 500, 100)])
+  data.htmlUrl = 'https://github.com/keycloak/keycloak/pull/36882'
+  assert.equal(repoSlug(data), 'keycloak/keycloak')
+  const calibrated = planReview(data, true, 8, [{ repo: 'keycloak/keycloak', medianChangedLines: 900 }])
+  const uncalibrated = planReview(data, true, 8)
+  assert.ok(!calibrated.riskSignals.includes('large-change'))
+  assert.ok(uncalibrated.riskSignals.includes('large-change'))
 })

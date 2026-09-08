@@ -27,6 +27,9 @@ export interface ReviewerRole {
 /** The verification gate's route: high volume, mechanical evidence checks. */
 export const VERIFIER_ROUTE: ModelRoute = { provider: 'zhipu', model: 'glm-5.3-flash' }
 
+/** The gray-zone review planner's route: one cheap structured call per review at most. */
+export const PLANNER_ROUTE: ModelRoute = { provider: 'zhipu', model: 'glm-5.3-flash' }
+
 export const ROLES: readonly ReviewerRole[] = [
   {
     id: 'bug-hunter',

@@ -24,6 +24,10 @@ export interface VerificationChecklist {
 
 export interface EvidencePack {
   readonly status: VerificationStatus
+  /** How the conclusion was proven; `executed` means a deterministic check reproduced it. */
+  readonly proofLevel?: 'executed' | 'grounded' | 'plausible'
+  /** Machine-checkable artifact backing an executed proof (e.g. the compiler diff). */
+  readonly artifact?: string
   readonly claim: string
   readonly trigger: string
   readonly impact: string
@@ -71,7 +75,8 @@ export function renderEvidencePack(pack: EvidencePack): readonly string[] {
   })
   return [
     '**Evidence Pack**',
-    `- Status: ${pack.status}`,
+    `- Status: ${pack.status}${pack.proofLevel !== undefined ? ` (proof: ${pack.proofLevel})` : ''}`,
+    ...(pack.artifact !== undefined ? [`- Artifact: ${pack.artifact}`] : []),
     `- Claim: ${pack.claim}`,
     `- Trigger: ${pack.trigger}`,
     `- Impact: ${pack.impact}`,

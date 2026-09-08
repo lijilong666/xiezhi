@@ -11,10 +11,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import { renderEvidencePack } from './evidence.ts'
+import { prepareEvidence, setActiveStore, type PreparedEvidence } from './evidence-tools.ts'
+import { findCrossFileBreaks, renderCrossBreaks } from './crosschange.ts'
+import { executeVerification, type ExecVerOutcome } from './execver.ts'
+import { llmReviewPlan } from './hybrid-planner.ts'
 import { buildInlineComments, fetchPullRequest, ghFetch, isChangedLine, postReviewComment, renderPrContext, SKIP_PATTERN, type PrRef } from './github.ts'
 import { fetchRepoContext, renderRepoContext } from './context.ts'
-import { planReview, renderPlanSection, type ReviewPlan } from './planner.ts'
-import { ROLES, VERIFIER_ROUTE, type ModelRoute, type ReviewerRole } from './roles.ts'
+import { budgetEnforcement, isGrayZone, planReview, renderPlanSection, riskProfileFor, type RepoCalibration, type ReviewPlan } from './planner.ts'
+import { PLANNER_ROUTE, ROLES, VERIFIER_ROUTE, type ModelRoute, type ReviewerRole } from './roles.ts'
 import { aggregateFindings, asFindingsOutput, compareFindings, FINDINGS_OUTPUT_SCHEMA, type AggregatedFinding, type Finding } from './schema.ts'
 import { EMPTY_VERIFICATION_COUNTS, verifyFindings, type Candidate, type VerificationCounts } from './verify.ts'
 import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.ts'
@@ -22,6 +26,9 @@ import { addUsage, formatTokens, sumRunUsage, type UsageSummary } from './usage.
 /** Config consumed from the cordis.yml row; defaults live in the schema. */
 export interface ReviewConfig {
   readonly adaptive: boolean
+  readonly hybridPlanner: boolean
+  readonly evidence: boolean
+  readonly execver: boolean
   readonly verifier: boolean
   readonly batchSize: number
   readonly post: 'off' | 'comment'
@@ -30,6 +37,8 @@ export interface ReviewConfig {
   readonly repoContext: 'off' | 'changed'
   /** Per-role provider/model overrides keyed by role id; `verifier` names the gate. */
   readonly routes: readonly { id: string, provider: string, model: string }[]
+  /** Per-repo scale baselines that widen the large/wide risk thresholds. */
+  readonly repoCalibrations: readonly RepoCalibration[]
 }
 
 /** Resolve one role's route: config override first, then the tier-aware role default. */
@@ -101,6 +110,8 @@ interface PipelineStats {
   readonly verifierUsed: boolean
   readonly verifierModel: string
   readonly verifierUsage: UsageSummary
+  readonly budgetExceeded: boolean
+  readonly escalationEligible: boolean
 }
 
 function renderCostSection(roleOutcomes: readonly RoleOutcome[], stats: PipelineStats): string {
@@ -154,7 +165,7 @@ function renderReport(
     lines.push('', '## Findings', '', 'No findings survived the review.')
   }
   const actualTokens = roleOutcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), stats.verifierUsage)
-  lines.push('', ...renderPlanSection(plan, actualTokens.inputTokens + actualTokens.outputTokens))
+  lines.push('', ...renderPlanSection(plan, actualTokens.inputTokens + actualTokens.outputTokens, stats.budgetExceeded))
   lines.push('', renderCostSection(roleOutcomes, stats))
   return lines.join('\n')
 }
@@ -177,8 +188,25 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     if (section !== '') prContext = `${prContext}\n\n${section}`
   }
 
-  const plan = planReview(data, config.adaptive, config.batchSize)
+  let evidence: PreparedEvidence | undefined
+  if (config.evidence) {
+    evidence = await prepareEvidence(ref, data, signal, config.execver)
+  }
+  const crossBreaks = evidence?.store !== undefined ? findCrossFileBreaks(evidence.store, data.files) : []
+  const extraSignals = crossBreaks.length > 0 ? ['cross-file-break'] : []
+  const profile = riskProfileFor(data, config.repoCalibrations, extraSignals)
+  let plan = planReview(data, config.adaptive, config.batchSize, config.repoCalibrations, extraSignals)
+  let plannerUsageText = ''
+  if (config.adaptive && config.hybridPlanner && isGrayZone(profile)) {
+    const plannerRoute = config.routes.find(route => route.id === 'planner') ?? PLANNER_ROUTE
+    const planned = await llmReviewPlan(ctx.subagents, parent, signal, profile, plan, plannerRoute)
+    plan = planned.plan
+    plannerUsageText = planned.plannerUsageText
+  }
   const activeRoles = ROLES.filter(role => plan.selectedRoles.includes(role.id))
+
+  setActiveStore(evidence?.store)
+  try {
 
   const roleOutcomes = await Promise.all(activeRoles.map(async role => {
     try {
@@ -202,17 +230,40 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     }
   })
 
+  const roleSpent = roleOutcomes.reduce((sum, outcome) => addUsage(sum, outcome.usage), { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } satisfies UsageSummary)
+  const enforcement = budgetEnforcement(plan, roleSpent.inputTokens + roleSpent.outputTokens)
+
   const verifierRoute = config.routes.find(route => route.id === 'verifier') ?? VERIFIER_ROUTE
+  const evidenceEnabled = evidence?.store !== undefined
+  const crossBreaksBlock = renderCrossBreaks(crossBreaks)
+  const evidenceBlock = evidenceEnabled
+    ? [evidence?.rulesBlock === '' ? '(no repository rule files found in snapshot)' : evidence?.rulesBlock, crossBreaksBlock === '' ? '' : `${crossBreaksBlock}`].filter(block => block !== '').join('\n\n')
+    : undefined
+  const execverActive = config.execver && evidence?.store !== undefined && evidence?.baseStore !== undefined
   const verified = config.verifier && candidates.length > 0
-    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, plan.batchSize, verifierRoute, (path, line) => isChangedLine(data.files, path, line))
+    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, enforcement.verifierBatchSize, verifierRoute, (path, line) => isChangedLine(data.files, path, line), enforcement.allowEscalation && plan.verificationDepth === 'light' && !execverActive, evidenceBlock)
     : {
         kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })),
         droppedCount: 0,
         statusCounts: EMPTY_VERIFICATION_COUNTS,
         usage: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        plausibleCandidates: [],
       }
 
-  const aggregated = aggregateFindings(verified.kept)
+  let execverOutcome: ExecVerOutcome | undefined
+  if (execverActive && verified.plausibleCandidates.length > 0) {
+    execverOutcome = await executeVerification(verified.plausibleCandidates, evidence!.store!, evidence!.baseStore!, signal)
+  }
+  let keptFindings = verified.kept
+  let statusCounts = verified.statusCounts
+  let droppedCount = verified.droppedCount
+  if (execverOutcome !== undefined && execverOutcome.upgrades.length > 0) {
+    keptFindings = [...keptFindings, ...execverOutcome.upgrades]
+    statusCounts = { ...statusCounts, plausible: statusCounts.plausible - execverOutcome.upgrades.length, confirmed: statusCounts.confirmed + execverOutcome.upgrades.length }
+    droppedCount = Math.max(0, droppedCount - execverOutcome.upgrades.length)
+  }
+
+  const aggregated = aggregateFindings(keptFindings)
     .slice(0, config.maxFindings)
     .sort(compareFindings)
 
@@ -223,13 +274,32 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
       .filter((outcome): outcome is RoleOutcome & { error: string } => outcome.error !== undefined)
       .map(outcome => ({ title: outcome.roleTitle, reason: outcome.error })),
     candidateCount: candidates.length,
-    droppedCount: verified.droppedCount,
-    verificationCounts: verified.statusCounts,
+    droppedCount,
+    verificationCounts: statusCounts,
     verifierUsed: config.verifier,
     verifierModel: verifierRoute.model,
     verifierUsage: verified.usage,
+    budgetExceeded: enforcement.exceeded,
+    escalationEligible: enforcement.allowEscalation && plan.verificationDepth === 'light',
   }
   let report = renderReport(data.title, data.htmlUrl, aggregated, stats, roleOutcomes, plan)
+  if (config.evidence) {
+    const evidenceLines = evidence?.store !== undefined
+      ? evidence.store.renderReportSection()
+      : ['## Evidence', `- degraded: ${evidence?.degradedReason ?? 'unknown reason'} — diff-only verification`]
+    report = `${report}\n\n${evidenceLines.join('\n')}`
+  }
+  if (execverOutcome !== undefined) {
+    report = `${report}\n${execverOutcome.summary}`
+  } else if (config.execver && !execverActive && evidence !== undefined) {
+    report = `${report}\nexecver: skipped — ${evidence.baseStore === undefined ? 'base snapshot unavailable' : 'no plausible critical/major candidates'}`
+  }
+  if (crossBreaks.length > 0) {
+    report = `${report}\ncross-change: ${crossBreaks.length} stale import(s) after removal/rename (signal cross-file-break)`
+  }
+  if (plannerUsageText !== '') {
+    report = `${report}\n${plannerUsageText}`
+  }
 
   if (config.post === 'comment') {
     const { inline } = buildInlineComments(aggregated, data.files)
@@ -237,4 +307,9 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     report = `${report}\n\n---\nPosted as a review: ${url} (${inline.length} inline comments)`
   }
   return report
+  } finally {
+    setActiveStore(undefined)
+    evidence?.store?.dispose()
+    evidence?.baseStore?.dispose()
+  }
 }
