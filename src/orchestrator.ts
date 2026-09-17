@@ -30,6 +30,7 @@ export interface ReviewConfig {
   readonly adaptive: boolean
   readonly hybridPlanner: boolean
   readonly evidence: boolean
+  readonly verifierTools: boolean
   readonly execver: boolean
   readonly verifier: boolean
   readonly batchSize: number
@@ -278,7 +279,7 @@ export async function runReview(ctx: Context, parent: Agent, signal: AbortSignal
     : undefined
   const execverActive = config.execver && evidence?.store !== undefined && evidence?.baseStore !== undefined
   const verified = config.verifier && candidates.length > 0
-    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, enforcement.verifierBatchSize, verifierRoute, (path, line) => isChangedLine(data.files, path, line), enforcement.allowEscalation && plan.verificationDepth === 'light' && !execverActive, evidenceBlock)
+    ? await verifyFindings(ctx.subagents, parent, prContext, candidates, signal, enforcement.verifierBatchSize, verifierRoute, (path, line) => isChangedLine(data.files, path, line), enforcement.allowEscalation && plan.verificationDepth === 'light' && !execverActive, evidenceBlock, config.verifierTools)
     : {
         kept: candidates.map(candidate => ({ role: candidate.role, finding: candidate.finding })),
         droppedCount: 0,

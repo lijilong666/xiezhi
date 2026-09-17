@@ -22,6 +22,7 @@ const harnessRoot = join(here, '..', '..')
 const REPOS = ['sentry', 'grafana', 'cal_dot_com', 'discourse', 'keycloak']
 const args = process.argv.slice(2)
 const sampleFlag = readFlag('--sample')
+const skipFlag = readFlag('--skip')
 const limitFlag = readFlag('--limit')
 const resultsDirFlag = readValueFlag('--results-dir')
 const resultsDir = resultsDirFlag === undefined ? join(here, 'results') : resolve(resultsDirFlag)
@@ -64,9 +65,11 @@ function loadTargets() {
   for (const repo of REPOS) {
     const golden = JSON.parse(readFileSync(join(here, 'golden', `${repo}.json`), 'utf8'))
     const arr = Array.isArray(golden) ? golden : [golden]
-    const take = sampleFlag !== undefined ? arr.slice(0, sampleFlag) : arr
+    const from = skipFlag ?? 0
+    const to = sampleFlag !== undefined ? from + sampleFlag : arr.length
+    const take = arr.slice(from, to)
     take.forEach((entry, idx) => {
-      targets.push({ repo, idx, url: entry.url, title: entry.pr_title ?? '', goldenCount: (entry.comments ?? []).length })
+      targets.push({ repo, idx: from + idx, url: entry.url, title: entry.pr_title ?? '', goldenCount: (entry.comments ?? []).length })
     })
   }
   return limitFlag !== undefined ? targets.slice(0, limitFlag) : targets
@@ -101,9 +104,9 @@ for (const target of pending) {
   manifest.set(label, entry)
   saveManifest(manifest)
   try {
-    const { stdout } = await run('cmd.exe', ['/c', 'pnpm.cmd', 'dsh', '--profile', 'headless', '--patch', './xiezhi/dev.patch.yml',
+    const { stdout } = await run('cmd.exe', ['/c', 'pnpm.cmd', 'dsh', '--profile', 'headless', '--patch', './zhipu-adapter/dev.patch.yml', '--patch', './xiezhi/dev.patch.yml',
       `Use the review_pull_request tool to review PR ${target.url}, then output the full markdown report verbatim.`],
-      { cwd: harnessRoot, encoding: 'utf8', timeout: 35 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 })
+      { cwd: harnessRoot, encoding: 'utf8', timeout: 50 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 })
     const report = extractReport(stdout)
     if (report === undefined) {
       manifest.set(label, { ...entry, status: 'no-report', durationMs: Date.now() - startedAt })

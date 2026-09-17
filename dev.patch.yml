@@ -6,17 +6,10 @@
     - id: xiezhi
       name: 'file:///D:/Work/projects/deepseek_harness/harness/xiezhi/src/index.ts'
       config:
-        # 20-PR baseline (2026-08-30): all-flash on DeepSeek; ablations reuse this overlay
-        routes:
-          - id: bug-hunter
-            provider: deepseek-official
-            model: deepseek-v4-flash
-          - id: security
-            provider: deepseek-official
-            model: deepseek-v4-flash
-          - id: nitpicker
-            provider: deepseek-official
-            model: deepseek-v4-flash
-          - id: verifier
-            provider: deepseek-official
-            model: deepseek-v4-flash
+        # M5 final (2026-09-15, zhipu quota-aware): verifier tool loop OFF — token-bucket 429s
+        # killed every large verifier prompt; plain batched checklist is the zhipu-proven config.
+        adaptive: true
+        hybridPlanner: true
+        evidence: true
+        verifierTools: false
+        execver: true

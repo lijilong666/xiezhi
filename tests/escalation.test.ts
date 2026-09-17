@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { escalationCandidates } from '../src/verify.ts'
+import { asVerdictsOutput, escalationCandidates } from '../src/verify.ts'
 import type { ChecklistVerdict } from '../src/evidence.ts'
 import type { Candidate } from '../src/verify.ts'
 import type { Finding } from '../src/schema.ts'
@@ -34,4 +34,19 @@ test('minor and info plausibles stay dropped without escalation', () => {
   const candidates = [candidate(0, 'minor'), candidate(1, 'info')]
   const verdicts = [verdict(0, 'plausible'), verdict(1, 'plausible')]
   assert.deepEqual(escalationCandidates(candidates, verdicts), [])
+})
+
+test('verdict parsing accepts GLM self-selected top-level key names', () => {
+  const verdictList = [verdict(0, 'confirmed'), verdict(1, 'rejected')]
+  assert.deepEqual(asVerdictsOutput({ verdicts: verdictList }), verdictList)
+  assert.deepEqual(asVerdictsOutput({ pairs: verdictList }), verdictList)
+  assert.deepEqual(asVerdictsOutput({ matches: [...verdictList] }), verdictList)
+  assert.deepEqual(asVerdictsOutput({ result: { verdicts: verdictList } }), [])
+})
+
+test('verdict parsing rejects arrays without verdict-shaped entries', () => {
+  assert.deepEqual(asVerdictsOutput({ pairs: [{ index: 0, note: 'x' }] }), [])
+  assert.deepEqual(asVerdictsOutput({ verdicts: 'not-an-array' }), [])
+  assert.deepEqual(asVerdictsOutput(null), [])
+  assert.deepEqual(asVerdictsOutput([1, 2, 3].map(n => ({ index: n }))), [])
 })

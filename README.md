@@ -159,7 +159,7 @@ pnpm build                                           # 独立仓库内（含 pre
 ## 测试
 
 ```sh
-node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts xiezhi/tests/evidence.test.ts xiezhi/tests/evidence-tools.test.ts xiezhi/tests/planner.test.ts xiezhi/tests/escalation.test.ts xiezhi/tests/execver.test.ts xiezhi/tests/crosschange.test.ts xiezhi/tests/hybrid-planner.test.ts xiezhi/tests/adversarial.test.ts xiezhi/tests/resilience.test.ts zhipu-adapter/tests/sse.test.ts
+node --import tsx/esm --test xiezhi/tests/schema.test.ts xiezhi/tests/github.test.ts xiezhi/tests/context.test.ts xiezhi/tests/evidence.test.ts xiezhi/tests/evidence-tools.test.ts xiezhi/tests/planner.test.ts xiezhi/tests/escalation.test.ts xiezhi/tests/verify-prompt.test.ts xiezhi/tests/execver.test.ts xiezhi/tests/crosschange.test.ts xiezhi/tests/hybrid-planner.test.ts xiezhi/tests/adversarial.test.ts xiezhi/tests/resilience.test.ts zhipu-adapter/tests/sse.test.ts
 ```
 
 99/99 纯函数与 fixture 覆盖：风险画像/分级/灰区/预算执行/仓库校准（表驱动含边界值）、Evidence Pack 发布门槛与四态裁决、快照检索原语（glob/路径逃逸/dispose 所有权）、跨文件断链解析、差分 tsc（真实编译器跑 fixture：升级命中/跨文件不升级/环境失败不改判）、planner 输出防弹映射、对抗注入中和、抑制表精确匹配、熔断跳闸/复位/自降防护、去重聚合、hunk 锚点、SSE 分帧。

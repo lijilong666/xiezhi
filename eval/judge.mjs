@@ -5,9 +5,10 @@
  * the same underlying issue?") to 1:1 match them against the golden comments,
  * and prints precision / recall tables.
  *
- * Usage (needs DEEPSEEK_API_KEY in env or in ~/.dsh/.credentials.yaml):
- *   node xiezhi/eval/judge.mjs                 # judge everything in results/
- *   node xiezhi/eval/judge.mjs --dry           # parse + local metrics only
+ * Usage:
+ *   node xiezhi/eval/judge.mjs                          # judge results/ with deepseek-chat
+ *   node xiezhi/eval/judge.mjs --provider zhipu         # judge with glm-5.3 (needs ZHIPU_API_KEY in env)
+ *   node xiezhi/eval/judge.mjs --dry                    # parse + local metrics only
  *   node xiezhi/eval/judge.mjs --results-dir <path> --output <path>
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -19,6 +20,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const REPOS = ['sentry', 'grafana', 'cal_dot_com', 'discourse', 'keycloak']
 const args = process.argv.slice(2)
 const dry = args.includes('--dry')
+const provider = args.includes('--provider') ? 'zhipu' : 'deepseek'
 const resultsDirFlag = readValueFlag('--results-dir')
 const outputFlag = readValueFlag('--output')
 const resultsDir = resultsDirFlag === undefined ? join(here, 'results') : resolve(resultsDirFlag)
@@ -31,7 +33,16 @@ function readValueFlag(name) {
   return value
 }
 
+const ENDPOINTS = {
+  deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
+  zhipu: { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-5.3' },
+}
+
 function apiKey() {
+  if (provider === 'zhipu') {
+    if (process.env.ZHIPU_API_KEY) return process.env.ZHIPU_API_KEY
+    throw new Error('ZHIPU_API_KEY not in env (inject from registry: [Environment]::GetEnvironmentVariable(\'ZHIPU_API_KEY\',\'User\'))')
+  }
   if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY
   const credPath = join(homedir(), '.dsh', '.credentials.yaml')
   if (existsSync(credPath)) {
@@ -68,11 +79,12 @@ async function judgePairs(pairs) {
     `OURS   [${pair.ours.severity}]: ${pair.ours.title} (${pair.ours.file}:${pair.ours.line}) ${pair.ours.description}`,
     '',
   ].join('\n')).join('\n')
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const endpoint = ENDPOINTS[provider]
+  const response = await fetch(endpoint.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: endpoint.model,
       messages: [
         {
           role: 'system',

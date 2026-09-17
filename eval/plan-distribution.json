@@ -1,0 +1,446 @@
+{
+  "generated": "2026-09-17T08:54:58.147Z",
+  "source": "baseline-20.json",
+  "adaptive": true,
+  "batchSize": 8,
+  "distribution": {
+    "low": 6,
+    "medium": 9,
+    "high": 5
+  },
+  "grayZone": {
+    "uncalibrated": 6,
+    "calibrated": 6
+  },
+  "perPr": [
+    {
+      "repo": "sentry",
+      "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+      "changedLines": 138,
+      "fileCount": 3,
+      "signals": [],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "sentry",
+      "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+      "changedLines": 212,
+      "fileCount": 9,
+      "signals": [],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "sentry",
+      "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+      "changedLines": 486,
+      "fileCount": 8,
+      "signals": [
+        "dependency-change",
+        "large-change"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "security"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": true,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": true
+    },
+    {
+      "repo": "sentry",
+      "url": "https://github.com/getsentry/sentry/pull/67876",
+      "changedLines": 297,
+      "fileCount": 3,
+      "signals": [
+        "patch-truncated"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "nitpicker"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": false,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "grafana",
+      "url": "https://github.com/grafana/grafana/pull/79265",
+      "changedLines": 142,
+      "fileCount": 11,
+      "signals": [
+        "wide-change"
+      ],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "grafana",
+      "url": "https://github.com/grafana/grafana/pull/103633",
+      "changedLines": 273,
+      "fileCount": 4,
+      "signals": [
+        "sensitive-paths",
+        "thin-tests"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "security"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": true,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": true
+    },
+    {
+      "repo": "grafana",
+      "url": "https://github.com/grafana/grafana/pull/76186",
+      "changedLines": 215,
+      "fileCount": 8,
+      "signals": [
+        "thin-tests",
+        "patch-truncated"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "nitpicker"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": false,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "grafana",
+      "url": "https://github.com/grafana/grafana/pull/107534",
+      "changedLines": 63,
+      "fileCount": 4,
+      "signals": [],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "cal_dot_com",
+      "url": "https://github.com/calcom/cal.com/pull/8087",
+      "changedLines": 189,
+      "fileCount": 12,
+      "signals": [
+        "wide-change"
+      ],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "cal_dot_com",
+      "url": "https://github.com/calcom/cal.com/pull/10600",
+      "changedLines": 316,
+      "fileCount": 16,
+      "signals": [
+        "sensitive-paths",
+        "infra-change",
+        "wide-change",
+        "thin-tests"
+      ],
+      "level": "high",
+      "roles": [
+        "bug-hunter",
+        "security",
+        "nitpicker"
+      ],
+      "tier": "pro",
+      "depth": "strict",
+      "grayZone": false,
+      "levelCalibrated": "high",
+      "grayZoneCalibrated": true
+    },
+    {
+      "repo": "cal_dot_com",
+      "url": "https://github.com/calcom/cal.com/pull/10967",
+      "changedLines": 584,
+      "fileCount": 22,
+      "signals": [
+        "large-change",
+        "wide-change",
+        "thin-tests",
+        "patch-truncated"
+      ],
+      "level": "high",
+      "roles": [
+        "bug-hunter",
+        "security",
+        "nitpicker"
+      ],
+      "tier": "pro",
+      "depth": "strict",
+      "grayZone": true,
+      "levelCalibrated": "high",
+      "grayZoneCalibrated": true
+    },
+    {
+      "repo": "cal_dot_com",
+      "url": "https://github.com/calcom/cal.com/pull/22345",
+      "changedLines": 345,
+      "fileCount": 2,
+      "signals": [
+        "patch-truncated"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "nitpicker"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": false,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "discourse",
+      "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+      "changedLines": 32,
+      "fileCount": 3,
+      "signals": [],
+      "level": "low",
+      "roles": [
+        "bug-hunter"
+      ],
+      "tier": "flash",
+      "depth": "light",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "discourse",
+      "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+      "changedLines": 225,
+      "fileCount": 18,
+      "signals": [
+        "wide-change",
+        "thin-tests"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "nitpicker"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": false,
+      "levelCalibrated": "low",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "discourse",
+      "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+      "changedLines": 178,
+      "fileCount": 10,
+      "signals": [
+        "infra-change"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "security"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": false,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "discourse",
+      "url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+      "changedLines": 666,
+      "fileCount": 28,
+      "signals": [
+        "dependency-change",
+        "infra-change",
+        "large-change",
+        "wide-change"
+      ],
+      "level": "high",
+      "roles": [
+        "bug-hunter",
+        "security",
+        "nitpicker"
+      ],
+      "tier": "pro",
+      "depth": "strict",
+      "grayZone": false,
+      "levelCalibrated": "high",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "keycloak",
+      "url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+      "changedLines": 431,
+      "fileCount": 9,
+      "signals": [
+        "large-change",
+        "patch-truncated"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "nitpicker"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": true,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "keycloak",
+      "url": "https://github.com/keycloak/keycloak/pull/32918",
+      "changedLines": 271,
+      "fileCount": 4,
+      "signals": [
+        "sensitive-paths",
+        "patch-truncated"
+      ],
+      "level": "high",
+      "roles": [
+        "bug-hunter",
+        "security",
+        "nitpicker"
+      ],
+      "tier": "pro",
+      "depth": "strict",
+      "grayZone": true,
+      "levelCalibrated": "high",
+      "grayZoneCalibrated": true
+    },
+    {
+      "repo": "keycloak",
+      "url": "https://github.com/keycloak/keycloak/pull/33832",
+      "changedLines": 682,
+      "fileCount": 12,
+      "signals": [
+        "sensitive-paths",
+        "dependency-change",
+        "large-change",
+        "wide-change",
+        "thin-tests",
+        "patch-truncated"
+      ],
+      "level": "high",
+      "roles": [
+        "bug-hunter",
+        "security",
+        "nitpicker"
+      ],
+      "tier": "pro",
+      "depth": "strict",
+      "grayZone": false,
+      "levelCalibrated": "high",
+      "grayZoneCalibrated": false
+    },
+    {
+      "repo": "keycloak",
+      "url": "https://github.com/keycloak/keycloak/pull/36882",
+      "changedLines": 68,
+      "fileCount": 10,
+      "signals": [
+        "infra-change",
+        "patch-truncated"
+      ],
+      "level": "medium",
+      "roles": [
+        "bug-hunter",
+        "security"
+      ],
+      "tier": "balanced",
+      "depth": "standard",
+      "grayZone": true,
+      "levelCalibrated": "medium",
+      "grayZoneCalibrated": true
+    }
+  ],
+  "calibrations": [
+    {
+      "repo": "ai-code-review-evaluation/sentry-greptile",
+      "medianChangedLines": 212,
+      "medianFiles": 8
+    },
+    {
+      "repo": "getsentry/sentry",
+      "medianChangedLines": 297,
+      "medianFiles": 3
+    },
+    {
+      "repo": "grafana/grafana",
+      "medianChangedLines": 179,
+      "medianFiles": 6
+    },
+    {
+      "repo": "calcom/cal.diy",
+      "medianChangedLines": 331,
+      "medianFiles": 14
+    },
+    {
+      "repo": "ai-code-review-evaluation/discourse-graphite",
+      "medianChangedLines": 202,
+      "medianFiles": 14
+    },
+    {
+      "repo": "ai-code-review-evaluation/keycloak-greptile",
+      "medianChangedLines": 431,
+      "medianFiles": 9
+    },
+    {
+      "repo": "keycloak/keycloak",
+      "medianChangedLines": 271,
+      "medianFiles": 10
+    }
+  ]
+}

@@ -342,6 +342,9 @@ export async function prepareEvidence(ref: PrRef, data: PrData, signal: AbortSig
   const store = new EvidenceStore(head.tempRoot, ref, data.baseSha, { ownedTempRoot: head.tempRoot, skippedSymlinks: head.skippedSymlinks })
   const rulesBlock = rulesFromSnapshot(store)
   if (!withBase) return { store, rulesBlock }
+  // Only TypeScript projects need the base snapshot for the execver tsc diff;
+  // skipping it for other stacks halves the download.
+  if (!existsSync(join(store.rootDir, 'tsconfig.json'))) return { store, rulesBlock }
   const base = await fetchSnapshotTarball(ref, data.baseSha, signal, 'base')
   if ('degradedReason' in base) return { store, rulesBlock, degradedReason: base.degradedReason }
   const baseStore = new EvidenceStore(base.tempRoot, ref, data.baseSha, { ownedTempRoot: base.tempRoot, skippedSymlinks: base.skippedSymlinks })
